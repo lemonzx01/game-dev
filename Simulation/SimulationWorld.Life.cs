@@ -53,6 +53,7 @@ public sealed partial class SimulationWorld
         var sd = SpeciesOf(e);
         var eco = options.Ecology;
         if (!Breeds(sd) || e.Sex != Sex.Female || e.PregnantUntil != 0 || now < e.ReproReadyTick) return null;
+        if (FearAt(e, now) > PsyCfg.FearBlocksMatingAbove) return null; // too frightened
         if (StageOf(e, now) != LifeStage.Adult) return null;
         var v = e.Vitals.At(now, options.Vitals);
         if (v.Hunger > eco.ReproMaxNeed || v.Thirst > eco.ReproMaxNeed || v.Health < eco.ReproMinHealth) return null;
@@ -99,6 +100,11 @@ public sealed partial class SimulationWorld
         mother.ReproReadyTick = mother.PregnantUntil + sd.ReproCooldownTicks;
         scheduler.Schedule(mother.PregnantUntil, 0, mother.Id.Value, new WorkItem(WorkKind.Birth, mother.Id.Value, mother.PregnantUntil), isRequired: true);
         Emit(new WorldEvent(0, now, EventKinds.Conceived, 0, mother.Id.Value, father.Id.Value, mother.X, mother.Y));
+        // Mutual bond: both took part, so both directions are justified.
+        Remember(mother, MemoryKind.Mated, father.Id.Value, mother.X, mother.Y, now);
+        Remember(father, MemoryKind.Mated, mother.Id.Value, father.X, father.Y, now);
+        Relate(mother, father.Id.Value, 200, now);
+        Relate(father, mother.Id.Value, 200, now);
     }
 
     // ---- Birth ---------------------------------------------------------------------------------
@@ -129,6 +135,9 @@ public sealed partial class SimulationWorld
             long child = SpawnEntity(mother.X, mother.Y, mother.Species, now, Sex.Unspecified, mother.Id.Value, mother.PregnancyFather, born: true);
             long sequence = Emit(new WorldEvent(0, now, EventKinds.EntityBorn, 0, mother.Id.Value, child, mother.X, mother.Y, 0, mother.PregnancyFather), critical: true);
             milestones.Add(new WorldEvent(sequence, now, EventKinds.EntityBorn, 0, mother.Id.Value, child, mother.X, mother.Y, 0, mother.PregnancyFather));
+            Remember(mother, MemoryKind.BecameParent, child, mother.X, mother.Y, now);
+            Relate(mother, child, 300, now);                    // kinship is justified in both directions
+            Relate(entities[FindLive(child)], mother.Id.Value, 300, now);
         }
     }
 

@@ -55,6 +55,7 @@ public sealed partial class SimulationWorld : ISimulation
         grid = new SpatialGrid(options.MapWidth, options.MapHeight);
         streams.Add(AiStream, new RandomStream(options.Seed, AiStream, 0));
         streams.Add(EcologyStream, new RandomStream(options.Seed, EcologyStream, 0));
+        streams.Add(PsycheStream, new RandomStream(options.Seed, PsycheStream, 0));
 
         // Prewarm is part of the baseline configuration; insertion order must not affect the hash.
         foreach (uint tag in options.PrewarmStreams)
@@ -338,7 +339,7 @@ public sealed partial class SimulationWorld : ISimulation
         using var bytes = new MemoryStream();
         using var writer = new BinaryWriter(bytes);
         // 1. Versions, identity, configuration, clock.
-        writer.Write(7u); // schema
+        writer.Write(8u); // schema
         writer.Write(1u); // RNG version
         writer.Write(worldId.Value);
         writer.Write(options.Seed);
@@ -367,6 +368,9 @@ public sealed partial class SimulationWorld : ISimulation
             writer.Write(v);
         options.Mind.WriteCanonical(writer);
         SpeciesCatalog.WriteCanonical(writer, options.Species);
+        var psy = options.Psyche;
+        foreach (int v in new[] { psy.MemoryCap, psy.RelationshipCap, psy.FearDecayPerTick, psy.TraitJitter, psy.DangerMemoryTicks, psy.DangerAvoidRadius, psy.FearBlocksMatingAbove })
+            writer.Write(v);
         var eco = options.Ecology;
         foreach (long v in new long[] { eco.CarcassDecayTicks, eco.AttackIntervalTicks, eco.HuntGiveUpTicks, eco.HuntCooldownTicks,
                      eco.MaxEntities, eco.LifespanJitterPercent, eco.ReproMaxNeed, eco.ReproMinHealth, eco.MateGiveUpTicks })
@@ -400,6 +404,7 @@ public sealed partial class SimulationWorld : ISimulation
         WritePathQueue(writer);
         WriteEcology(writer);
         WriteLife(writer);
+        writer.Write(nextMemoryId);
         // 5. RNG streams, retained events, durable milestones.
         writer.Write((uint)streamTags.Length);
         foreach (uint tag in streamTags)

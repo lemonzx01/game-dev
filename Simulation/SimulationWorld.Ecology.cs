@@ -81,6 +81,7 @@ public sealed partial class SimulationWorld
         int units = TakeMeat(cell, want);
         e.Vitals = new VitalsAnchor(now, Math.Max(0, v.Hunger - units * c.FoodPerUnit), v.Thirst, v.Health);
         ScheduleDeath(e);
+        Remember(e, MemoryKind.FoundFood, 0, cell % options.MapWidth, cell / options.MapWidth, now);
         Emit(new WorldEvent(0, now, EventKinds.EntityAte, 0, e.Id.Value, 0, cell % options.MapWidth, cell / options.MapWidth, (int)ResourceKind.Meat, units));
         return CommandReason.None;
     }
@@ -102,6 +103,7 @@ public sealed partial class SimulationWorld
         }
         prey.Vitals = new VitalsAnchor(now, v.Hunger, v.Thirst, health);
         ScheduleDeath(prey); // the old booking becomes stale
+        OnAttacked(prey, attacker, now);
     }
 
     // ---- Hunting -------------------------------------------------------------------------------

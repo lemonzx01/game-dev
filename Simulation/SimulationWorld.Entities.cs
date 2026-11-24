@@ -14,6 +14,7 @@ internal sealed class EntityState
     public long PregnantUntil;      // due tick, 0 = not pregnant
     public long PregnancyFather;
     public long ReproReadyTick;
+    public readonly Psyche Psyche = new();
     public long BirthTick;
     public VitalsAnchor Vitals;
     public long ScheduledDeathTick = long.MaxValue; // only the item due at this tick is live; older items are stale
@@ -51,6 +52,7 @@ public sealed partial class SimulationWorld
         grid.Add(id.Value, x, y);
         ScheduleDeath(entity);
         InitLife(entity, now, sex);
+        InitPsyche(entity, now);
         InitMind(entity, now);
         return id.Value;
     }
@@ -139,6 +141,7 @@ public sealed partial class SimulationWorld
             : new VitalsAnchor(now, v.Hunger, remaining, v.Health);
         ScheduleRegrowth(node, now);
         ScheduleDeath(e);
+        Remember(e, MemoryKind.FoundFood, 0, nx, ny, now);
         Emit(new WorldEvent(0, now, kind == ResourceKind.Food ? EventKinds.EntityAte : EventKinds.EntityDrank,
             0, e.Id.Value, 0, nx, ny, (int)kind, units));
         return CommandReason.None;
@@ -227,6 +230,7 @@ public sealed partial class SimulationWorld
             writer.Write(e.PregnantUntil);
             writer.Write(e.PregnancyFather);
             writer.Write(e.ReproReadyTick);
+            WritePsyche(writer, e.Psyche);
         }
         writer.Write((uint)deaths.Count);
         foreach (var r in deaths)

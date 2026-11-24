@@ -147,6 +147,7 @@ public sealed partial class SimulationWorld
     {
         var cfg = MindCfg;
         var (threat, distance) = NearestThreat(e);
+        if (threat is not null) OnThreatSeen(e, threat, distance, now); // danger raises fear and is remembered
         ScheduleThink(e, now + (threat is null ? cfg.ThinkIntervalTicks : cfg.DangerThinkIntervalTicks));
 
         var current = e.Mind.Kind;
@@ -160,7 +161,7 @@ public sealed partial class SimulationWorld
         Span<(int Score, ActionKind Kind)> candidates = stackalloc (int, ActionKind)[7];
         int n = 0;
         if (threat is not null)
-            candidates[n++] = (2000 + (cfg.PerceptionRadius * 2 - distance) * 50, ActionKind.Flee);
+            candidates[n++] = (FleeScore(e, distance, now), ActionKind.Flee); // personality and fear decide how close is too close
         if (v.Thirst >= cfg.DrinkStartNeed || current == ActionKind.Drink)
             candidates[n++] = ((int)(v.Thirst * 12 / 10_000), ActionKind.Drink);
         if (v.Hunger >= cfg.EatStartNeed || current == ActionKind.Eat)
@@ -170,7 +171,7 @@ public sealed partial class SimulationWorld
             candidates[n++] = ((int)(v.Hunger / 1_000) - 1, ActionKind.Hunt);
         // Reproduction only when safe and needs are low (MateFor checks vitals, stage, caps and a mate in sight).
         if (threat is null && (current == ActionKind.Mate || MateFor(e, now) is not null))
-            candidates[n++] = (400, ActionKind.Mate);
+            candidates[n++] = (250 + e.Psyche.Sociability / 4, ActionKind.Mate);
         if (threat is null && (fatigue >= cfg.RestStartFatigue || current == ActionKind.Rest))
             candidates[n++] = ((int)(fatigue * 9 / 10_000), ActionKind.Rest);
         candidates[n++] = (50, ActionKind.Wander);
@@ -334,15 +335,20 @@ public sealed partial class SimulationWorld
     }
 
     // Random passable neighbour from the AI stream (draws happen in scheduler order, so replay is stable).
+    // First pass avoids tiles near remembered danger (T010); the second accepts any allowed tile.
     private int WanderStep(EntityState e)
     {
         int start = (int)(streams[AiStream].Draw() % 4);
-        for (int k = 0; k < 4; k++)
-        {
-            var (dx, dy) = Neighbours[(start + k) % 4];
-            int x = e.X + dx, y = e.Y + dy;
-            if (InBounds(x, y) && TerrainRules.IsPassable(terrain[Cell(x, y)]) && WithinLeash(e, x, y)) return Cell(x, y);
-        }
+        long now = tick + 1; // called while the next tick is being processed
+        for (int pass = 0; pass < 2; pass++)
+            for (int k = 0; k < 4; k++)
+            {
+                var (dx, dy) = Neighbours[(start + k) % 4];
+                int x = e.X + dx, y = e.Y + dy;
+                if (!InBounds(x, y) || !TerrainRules.IsPassable(terrain[Cell(x, y)]) || !WithinLeash(e, x, y)) continue;
+                if (pass == 0 && RemembersDangerNear(e, x, y, now)) continue;
+                return Cell(x, y);
+            }
         return -1;
     }
 
