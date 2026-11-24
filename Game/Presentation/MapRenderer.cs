@@ -15,18 +15,18 @@ public partial class MapRenderer : Node2D
     [Export] public float CellSize = 16f;
     [Export] public Color PlaceholderColor = new(0.9f, 0.85f, 0.2f);
     [Export] public NodePath ObserverPath = "../Observer";
-    [Export] public float StartZoom = 2.5f;
+    [Export] public float StartZoom = 3f; // integer zoom keeps the 24 px character art crisp
 
     // Atlas regions (see Assets/CREDITS.md).
     private const int TileGrass = 0, TileShallow = 2, TileDeep = 3, TileForest = 4, TileMountain = 5, TileSnow = 6, TileFarmland = 7;
-    private static readonly Rect2 Sheep = new(0, 0, 32, 32), Deer = new(32, 0, 32, 32), Wolf = new(64, 0, 32, 32), Storage = new(32, 32, 32, 32);
-    private static readonly Rect2 Shadow = new(0, 0, 32, 32), Body = new(32, 0, 32, 32), Horns = new(64, 0, 32, 32), Hair = new(96, 0, 32, 32), Tunic = new(128, 0, 32, 32), Ring = new(224, 0, 32, 32);
+    private static readonly Rect2 Storage = new(32, 32, 32, 32);
+    private static readonly Rect2 Ring = new(224, 0, 32, 32);
     private static readonly Rect2 Oak = new(0, 0, 32, 32), Pine = new(32, 0, 32, 32), Berries = new(64, 0, 32, 32), EmptyBush = new(96, 0, 32, 32);
     private static readonly Rect2 CropsGrowing = new(0, 32, 32, 32), CropsRipe = new(32, 32, 32, 32), Stump = new(96, 32, 32, 32);
 
     private SimulationBridge bridge = null!;
     private ObserverController? observer;
-    private Texture2D terrainAtlas = null!, creatures = null!, humanoid = null!, plants = null!;
+    private Texture2D terrainAtlas = null!, creatures = null!, humanoid = null!, plants = null!, characters = null!;
     private ImageTexture terrain = null!;
     private int builtRevision = -1;
     private bool cameraPlaced;
@@ -43,6 +43,7 @@ public partial class MapRenderer : Node2D
         creatures = GD.Load<Texture2D>("res://Assets/Placeholders/creatures_buildings_placeholder.png");
         humanoid = GD.Load<Texture2D>("res://Assets/Placeholders/humanoid_modular_32x32_placeholder.png");
         plants = GD.Load<Texture2D>("res://Assets/Placeholders/plants_flora_placeholder.png");
+        characters = GD.Load<Texture2D>("res://Assets/Art/characters_24.png");
         TextureFilter = TextureFilterEnum.Nearest;
         BuildTerrain();
         var map = bridge.Map;
@@ -99,6 +100,7 @@ public partial class MapRenderer : Node2D
     public override void _Process(double delta)
     {
         if (builtRevision != bridge.MapRevision) BuildTerrain();
+        UpdateMotion((float)delta);
         if (!cameraPlaced && bridge.Settlements() is { Count: > 0 } towns) // towns appear on the first tick
         {
             GetViewport().GetCamera2D()!.Position = new Vector2(towns[0].X + 0.5f, towns[0].Y + 0.5f) * CellSize;
@@ -131,9 +133,13 @@ public partial class MapRenderer : Node2D
 
         DrawSettlements();
 
+        // Creatures sorted by drawn y so lower ones overlap higher ones.
+        drawOrder.Clear();
         foreach (var chunk in snapshot.Chunks)
             foreach (EntityRow row in chunk)
-                DrawCreature(row);
+                drawOrder.Add(row);
+        drawOrder.Sort((a, b) => DrawnAt(a).Y.CompareTo(DrawnAt(b).Y));
+        foreach (var row in drawOrder) DrawCreature(row);
     }
 
     // Farm plots (farmland + growing/ripe crops), the storage shed at the centre, and a zoom-aware name.
@@ -158,30 +164,110 @@ public partial class MapRenderer : Node2D
         }
     }
 
+    // ---- Character animation (presentation only: reads rows, never changes the simulation) ----
+    // Sheet Assets/Art/characters_24.png (tools/art/make_characters.py): 24 px frames, columns below, rows per species/variant.
+    private const int Frame = 24, ColIdle = 0, ColWalk = 2, ColWork = 6, ColAttack = 8, ColRead = 10, ColDead = 12;
+    private const int HumanRows = 8, DemonRow0 = 8, DemonRows = 4, SheepRow = 12, DeerRow = 13, RabbitRow = 14, WolfRow = 15;
+
+    private sealed class Motion
+    {
+        public Vector2 Pos, Target;
+        public bool Left;
+        public long SeenTick;
+    }
+
+    private readonly Dictionary<long, Motion> motion = [];
+    private readonly List<EntityRow> drawOrder = [];
+    private long motionTick = -1;
+    private float clock;
+
+    // Each new tick sets targets (and facing from the step direction); positions glide toward them between ticks.
+    private void UpdateMotion(float delta)
+    {
+        clock += delta;
+        var snapshot = bridge.Snapshot;
+        if (snapshot is not null && snapshot.Tick != motionTick)
+        {
+            motionTick = snapshot.Tick;
+            int live = 0;
+            foreach (var chunk in snapshot.Chunks)
+                foreach (var row in chunk)
+                {
+                    live++;
+                    var target = new Vector2(row.X, row.Y);
+                    if (!motion.TryGetValue(row.Id.Value, out var m))
+                        motion[row.Id.Value] = m = new Motion { Pos = target, Target = target, Left = (row.Id.Value & 1) == 1 };
+                    if (target.X != m.Target.X) m.Left = target.X < m.Target.X;
+                    m.Target = target;
+                    if (m.Pos.DistanceTo(target) > 3) m.Pos = target; // teleport, load or long catch-up: no sliding across the map
+                    m.SeenTick = snapshot.Tick;
+                }
+            if (motion.Count > live + 64)
+            {
+                var gone = new List<long>();
+                foreach (var (id, m) in motion) if (m.SeenTick != snapshot.Tick) gone.Add(id);
+                foreach (var id in gone) motion.Remove(id);
+            }
+        }
+        float k = 1f - Mathf.Exp(-delta * 14f);
+        foreach (var m in motion.Values) m.Pos = m.Pos.Lerp(m.Target, k);
+    }
+
+    private Vector2 DrawnAt(EntityRow row) => motion.TryGetValue(row.Id.Value, out var m) ? m.Pos : new Vector2(row.X, row.Y);
+
+    private static int Hash(long id) => (int)(((ulong)id * 2654435761UL >> 7) & 0x7fffffff);
+
+    private static int SheetRow(EntityRow row) => row.VisualKey switch
+    {
+        SpeciesCatalog.Human => Hash(row.Id.Value) % HumanRows,
+        SpeciesCatalog.Demon => DemonRow0 + Hash(row.Id.Value) % DemonRows,
+        SpeciesCatalog.Sheep => SheepRow,
+        SpeciesCatalog.Deer => DeerRow,
+        SpeciesCatalog.Rabbit => RabbitRow,
+        SpeciesCatalog.Wolf => WolfRow,
+        _ => -1,
+    };
+
+    private int SheetColumn(EntityRow row, bool moving, bool animal)
+    {
+        if (row.LifeState == LifeStates.Dead) return ColDead;
+        float t = clock + (Hash(row.Id.Value) % 97) * 0.13f;
+        var action = (ActionKind)row.Action;
+        if (moving) return ColWalk + (int)(t * (action == ActionKind.Flee ? 12f : 8f)) % 4;
+        return action switch
+        {
+            ActionKind.Work => ColWork + (int)(t * 3f) % 2,
+            ActionKind.Read => ColRead + (int)(t * 0.8f) % 2,
+            ActionKind.Hunt or ActionKind.Defend => ColAttack + (int)(t * 4f) % 2,
+            ActionKind.Eat or ActionKind.Drink when animal => ColWork + (int)(t * 1.5f) % 2,
+            ActionKind.Rest => ColIdle,
+            _ => ColIdle + (int)(t * 1.5f) % 2,
+        };
+    }
+
     private void DrawCreature(EntityRow row)
     {
         bool dead = row.LifeState == LifeStates.Dead;
-        var deadTint = new Color(0.45f, 0.45f, 0.45f, 0.8f);
+        var at = DrawnAt(row);
+        motion.TryGetValue(row.Id.Value, out var m);
+        bool moving = !dead && m is not null && m.Pos.DistanceSquaredTo(m.Target) > 0.0004f;
         if (observer is not null && row.Id.Value == observer.SelectedId)
-            DrawSprite(humanoid, Ring, row.X, row.Y, 1.6f);
-        switch (row.VisualKey)
         {
-            case SpeciesCatalog.Sheep: DrawSprite(creatures, Sheep, row.X, row.Y, 1.2f, dead ? deadTint : null); break;
-            case SpeciesCatalog.Deer: DrawSprite(creatures, Deer, row.X, row.Y, 1.3f, dead ? deadTint : null); break;
-            case SpeciesCatalog.Wolf: DrawSprite(creatures, Wolf, row.X, row.Y, 1.3f, dead ? deadTint : null); break;
-            case SpeciesCatalog.Rabbit: // no rabbit sprite yet: a small, tinted deer silhouette
-                DrawSprite(creatures, Deer, row.X, row.Y, 0.8f, dead ? deadTint : new Color("e0cfa0")); break;
-            case SpeciesCatalog.Human:
-            case SpeciesCatalog.Demon:
-                bool demon = row.VisualKey == SpeciesCatalog.Demon;
-                DrawSprite(humanoid, Shadow, row.X, row.Y, 1.5f);
-                DrawSprite(humanoid, Body, row.X, row.Y, 1.5f, dead ? deadTint : demon ? new Color("e06070") : new Color("f2c9a0"));
-                DrawSprite(humanoid, Tunic, row.X, row.Y, 1.5f, dead ? deadTint : demon ? new Color("7a2030") : new Color("3f6fb8"));
-                DrawSprite(humanoid, demon ? Horns : Hair, row.X, row.Y, 1.5f, dead ? deadTint : demon ? null : new Color("6b4a2a"));
-                break;
-            default:
-                DrawRect(new Rect2(new Vector2(row.X, row.Y) * CellSize, Vector2.One * CellSize * 0.8f), dead ? deadTint : PlaceholderColor);
-                break;
+            float w = 1.6f * CellSize;
+            DrawTextureRectRegion(humanoid, new Rect2(new Vector2((at.X + 0.5f) * CellSize - w / 2, (at.Y + 1) * CellSize - w), new Vector2(w, w)), Ring);
         }
+        int sheetRow = SheetRow(row);
+        if (sheetRow < 0)
+        {
+            DrawRect(new Rect2(at * CellSize, Vector2.One * CellSize * 0.8f), dead ? new Color(0.45f, 0.45f, 0.45f, 0.8f) : PlaceholderColor);
+            return;
+        }
+        int col = SheetColumn(row, moving, sheetRow >= SheepRow);
+        // Bottom-centred on the cell with feet on its lower edge; mirrored when facing left.
+        var origin = new Vector2((at.X + 0.5f) * CellSize, (at.Y + 1) * CellSize + 2);
+        DrawSetTransform(origin, 0, new Vector2(m is { Left: true } ? -1 : 1, 1));
+        DrawTextureRectRegion(characters, new Rect2(-Frame / 2, -Frame, Frame, Frame), new Rect2(col * Frame, sheetRow * Frame, Frame, Frame),
+            dead ? new Color(0.78f, 0.76f, 0.8f, 0.9f) : Colors.White);
+        DrawSetTransform(Vector2.Zero, 0, Vector2.One);
     }
 }
