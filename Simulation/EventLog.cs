@@ -17,11 +17,12 @@ internal sealed class EventLog
         ring = new WorldEvent[capacity];
     }
 
-    public void Append(long tick, int kind)
+    /// <summary>Appends a copy of <paramref name="entry"/> with the next EventSequence; evicts the oldest when full.</summary>
+    public void Append(in WorldEvent entry)
     {
         long next = checked(NextSequence + 1);
         int slot = (int)(((long)first + count) % Capacity);
-        ring[slot] = new WorldEvent(NextSequence, tick, kind);
+        ring[slot] = entry with { EventSequence = NextSequence };
         if (count == Capacity)
             first = (first + 1) % Capacity;
         else
@@ -45,6 +46,27 @@ internal sealed class EventLog
         return new(PageStatus.Ok, oldest, Latest, records.MoveToImmutable(), after + size);
     }
 
+    /// <summary>Retained entries, oldest first (save/load).</summary>
+    internal IEnumerable<WorldEvent> Entries()
+    {
+        for (int i = 0; i < count; i++) yield return ring[(int)(((long)first + i) % Capacity)];
+    }
+
+    /// <summary>Restores retained entries; sequences must be contiguous and end at nextSequence − 1.</summary>
+    internal void Restore(IReadOnlyList<WorldEvent> entries, long nextSequence)
+    {
+        if (entries.Count > Capacity || nextSequence < 1 || nextSequence - 1 < entries.Count)
+            throw new InvalidDataException("Event log bounds invalid.");
+        for (int i = 0; i < entries.Count; i++)
+            if (entries[i].EventSequence != nextSequence - entries.Count + i)
+                throw new InvalidDataException("Event log sequence is not contiguous.");
+        Array.Clear(ring);
+        for (int i = 0; i < entries.Count; i++) ring[i] = entries[i];
+        first = 0;
+        count = entries.Count;
+        NextSequence = nextSequence;
+    }
+
     public void WriteCanonical(BinaryWriter writer)
     {
         writer.Write(NextSequence - count);
@@ -56,6 +78,13 @@ internal sealed class EventLog
             writer.Write(entry.EventSequence);
             writer.Write(entry.Tick);
             writer.Write(entry.Kind);
+            writer.Write(entry.CommandSequence);
+            writer.Write(entry.Actor);
+            writer.Write(entry.Target);
+            writer.Write(entry.X);
+            writer.Write(entry.Y);
+            writer.Write(entry.Reason);
+            writer.Write(entry.Amount);
         }
     }
 }
