@@ -21,6 +21,16 @@ How to use them: create the images yourself, then send them to Claude Code. Clau
 
 Image tools output large images (e.g. 1024 px). That's fine **as long as the pixels are big, square and evenly sized**: a 32 px sprite enlarged 16 times.
 
+### Aspect ratio to choose
+| Image | Ratio | Notes |
+|---|---|---|
+| Style reference (4 characters side by side) | **16:9** | wide enough for 4 characters in one row |
+| Single pose (short prompt) | **1:1** | one character in the middle of the image |
+| Animation sheet | **16:9**, at most **4–6 frames per image** | 13 frames in one row come out too small and blurry. Split into: image 1 = `idle 1, idle 2, walk 1, walk 2, walk 3, walk 4`; image 2 = `work 1, work 2, attack 1, attack 2`; image 3 = `sit and read 1, sit and read 2, lying down defeated` |
+| Dragon | **1:1** for a single pose, **16:9** at no more than 4 frames per image | it's a large creature and needs space |
+
+Avoid 9:16 and 3:4 (tall images): side-view characters waste the space above and below and come out small.
+
 ---
 
 ## 1. Style reference (do this first)
