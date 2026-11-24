@@ -6,6 +6,10 @@ T001–T014 DONE and merged to main (2026-11-24; T003–T014 merged by owner ins
 
 ## Handoff log
 
+**2026-11-24 | Claude Code | T019 combat, magic, dragon, taming (simulation) | main | merged (self-reviewed, A009)**
+
+- Validated attacks with fatigue cost; damage from skill, health, allies and toughness; villagers fight back when cornered or brave with friends. Firebolt/Heal for scholars with mana. Dragon species (armoured, retaliates, feared). Taming by feeding town food: refusal, personal trust, durable AnimalTamed milestone; tamed beasts stay home, are not threats, spare livestock. Schema 13. 89/89 tests, all Godot acceptances pass, 1,000-entity p99 2.6 ms. No Game/** changes (parallel T018-env). Handoff docs/handoffs/T019.md.
+
 **2026-11-24 | Claude Code | T018 character art pass | main | merged (self-reviewed, A009)**
 
 - Project-owned animated 24 px character sheet (8 human + 4 demon variants, sheep, deer, rabbit, wolf; idle/walk/work/attack/read/dead) from tools/art/make_characters.py; renderer glides creatures between cells, mirrors facing, depth-sorts and picks poses from actions. All Godot acceptances pass. Handoff docs/handoffs/T018-art.md.
