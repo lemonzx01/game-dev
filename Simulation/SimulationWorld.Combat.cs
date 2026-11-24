@@ -35,6 +35,7 @@ public sealed record MagicConfig(int MinScholarshipLevel = 1, long BaseMana = 10
     {
         foreach (long v in new[] { MinScholarshipLevel, BaseMana, ManaRegenTicks, FireboltCost, FireboltRange, FireboltDamage, CastIntervalTicks, HealCost, HealRange, HealAmount })
             ArgumentOutOfRangeException.ThrowIfLessThan(v, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(BaseMana, long.MaxValue - 100);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(HealBelowHealth, VitalsConfig.MaxHealth);
     }
 
@@ -86,12 +87,23 @@ public sealed partial class SimulationWorld
         return IsSapient(d) ? CombatCfg.UnarmedDamage : 0;
     }
 
+    private static Int128 ScalePercent(Int128 value, Int128 percent)
+    {
+        if (value <= 0 || percent <= 0) return 0;
+        if (value <= Int128.MaxValue / percent) return value * percent / 100;
+        var exact = (System.Numerics.BigInteger)value * (System.Numerics.BigInteger)percent / 100;
+        var cap = (System.Numerics.BigInteger)long.MaxValue * 1000;
+        return exact >= cap ? (Int128)long.MaxValue * 1000 : (Int128)exact;
+    }
+
     private long Damage(EntityState attacker, EntityState target, long basePower, long now)
     {
-        long dmg = basePower * (100 + 10 * Level(attacker, Skill.Combat)) / 100;                       // experience
-        dmg = dmg * (50 + 50 * attacker.Vitals.At(now, options.Vitals).Health / VitalsConfig.MaxHealth) / 100; // wounded fight weaker
-        dmg = dmg * (100 + CombatCfg.AllyBonusPercent * AlliesFighting(attacker, target)) / 100;     // numbers
-        return dmg * (SpeciesOf(target)?.DamageTakenPercent ?? 100) / 100;                           // toughness (dragon hide)
+        Int128 dmg = basePower;
+        dmg = ScalePercent(dmg, 100 + (Int128)10 * Level(attacker, Skill.Combat));                       // experience
+        dmg = ScalePercent(dmg, 50 + (Int128)50 * attacker.Vitals.At(now, options.Vitals).Health / VitalsConfig.MaxHealth); // wounded fight weaker
+        dmg = ScalePercent(dmg, 100 + (Int128)CombatCfg.AllyBonusPercent * AlliesFighting(attacker, target)); // numbers
+        dmg = ScalePercent(dmg, SpeciesOf(target)?.DamageTakenPercent ?? 100);                           // toughness (dragon hide)
+        return dmg >= long.MaxValue ? long.MaxValue : (long)dmg;
     }
 
     // Allies within AllyRadius engaged against the same target (townmates, or the same wild species), capped.
@@ -212,7 +224,13 @@ public sealed partial class SimulationWorld
     private bool KnowsMagic(EntityState e) =>
         IsSapient(SpeciesOf(e)) && e.LifeState == LifeStates.Alive && Level(e, Skill.Scholarship) >= MagicCfg.MinScholarshipLevel;
 
-    private long ManaAt(EntityState e, long now) => Math.Min(MaxMana(e), e.Mana + (now - e.ManaTick) / MagicCfg.ManaRegenTicks);
+    private long ManaAt(EntityState e, long now)
+    {
+        long max = MaxMana(e);
+        long gain = (now - e.ManaTick) / MagicCfg.ManaRegenTicks;
+        long room = max - e.Mana;
+        return room <= 0 ? max : e.Mana + Math.Min(room, gain);
+    }
 
     private bool Spend(EntityState e, long cost, long now)
     {
@@ -335,4 +353,7 @@ public sealed partial class SimulationWorld
         if (e.TamerId == 0)
             e.TamerId = entities.FirstOrDefault(m => m.LifeState == LifeStates.Alive && m.SettlementId == settlementId)?.Id.Value ?? 0;
     }
+
+    internal long ComputeDamageForTest(long attackerId, long targetId, long basePower) =>
+        Damage(entities[FindLive(attackerId)], entities[FindLive(targetId)], basePower, tick);
 }

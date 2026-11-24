@@ -102,7 +102,7 @@ public sealed partial class SimulationWorld
         InvalidateSettlementEconomy(town, before);
         var sd = SpeciesOf(animal)!;
         if (animal.TamerId != feeder.Id.Value) { animal.TamerId = feeder.Id.Value; animal.Trust = 0; } // trust is personal
-        animal.TameAttemptUntil = now + TameCfg.CooldownTicks + TameCfg.GiveUpTicks;
+        animal.TameAttemptUntil = now + (long)TameCfg.CooldownTicks + TameCfg.GiveUpTicks;
         int chance = Math.Clamp(TameCfg.BaseAcceptPercent - FearAt(animal, now) / 20 + feeder.Psyche.Sociability / 50, 5, 95);
         bool accepted = (int)(streams[PsycheStream].Draw() % 100) < chance;
         if (accepted)
@@ -110,7 +110,8 @@ public sealed partial class SimulationWorld
             var v = animal.Vitals.At(now, options.Vitals);
             animal.Vitals = new VitalsAnchor(now, Math.Max(0, v.Hunger - options.Vitals.FoodPerUnit), v.Thirst, v.Health);
             ScheduleDeath(animal);
-            animal.Trust = Math.Min(sd.TameTrust, animal.Trust + TameCfg.TrustPerFeed);
+            int room = sd.TameTrust - animal.Trust;
+            animal.Trust += room <= 0 ? 0 : Math.Min(room, TameCfg.TrustPerFeed);
             Relate(animal, feeder.Id.Value, 200, now);
         }
         else

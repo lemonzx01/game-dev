@@ -1,5 +1,6 @@
 using FantasyWorld.Simulation;
 using System.Collections.Immutable;
+using System.Numerics;
 using static FantasyWorld.Simulation.SpeciesCatalog;
 
 /// <summary>Regression tests for FIX-R2 (Codex T019 review findings 1–9, 14, 15).</summary>
@@ -15,6 +16,8 @@ internal static class FixR2Tests
         ("FIX-R2 #3 two simultaneous feeders preserve second town food, trust, tamer and RNG", TwoSimultaneousFeedersPreserveSecondTownState),
         ("FIX-R2 #4 abandoned refused taming attempt expires while completed bond survives", AbandonedRefusedAttemptExpiresWhileBondSurvives),
         ("FIX-R2 #5 heal charges exact mana and fatigue and leaves ineligible casts unchanged", HealChargesExactFatigueAndSkipsIneligible),
+        ("FIX-R2 #6 damage multipliers use wide arithmetic without wrapping and stay monotonic", DamageMultipliersNoOverflowAndMonotonic),
+        ("FIX-R2 #7 near-limit mana and trust saturate safely without negative wrap across save/load", ManaAndTrustNearLimitSaturateSafely),
     ];
 
     private static void Check(bool ok, string message)
@@ -628,5 +631,156 @@ internal static class FixR2Tests
         Check(world.ReadAdventure(W, new EntityId(healer))!.Mana == idleMana, "mana changed when no target eligible");
         Check(world.FatigueOf(healer) == idleFatigue, "fatigue changed when no target eligible");
         Check(world.ReadEntityDetails(W, new EntityId(hurt))!.Health == idleHealth, "health changed when no target eligible");
+    }
+
+    // ---- Finding 6 ------------------------------------------------------------------------------
+
+    private static void DamageMultipliersNoOverflowAndMonotonic()
+    {
+        static long WideReference(long basePower, int combatLevel, long attackerHealth, int allies, int allyBonusPct, int targetTakenPct)
+        {
+            BigInteger d = basePower;
+            d = d * (100 + (BigInteger)10 * combatLevel) / 100;
+            d = d * (50 + (BigInteger)50 * attackerHealth / VitalsConfig.MaxHealth) / 100;
+            d = d * (100 + (BigInteger)allyBonusPct * allies) / 100;
+            d = d * targetTakenPct / 100;
+            return d >= long.MaxValue ? long.MaxValue : (long)d;
+        }
+
+        // Test extreme accepted values: GuardDamage = long.MaxValue, FireboltDamage = long.MaxValue,
+        // large AllyBonusPercent / MaxAllies, Combat Skill MaxLevel = 1000, wounded attacker, and Dragon toughness (25%).
+        var species = Default.SetItem(Wolf, Default[Wolf] with { AttackDamage = long.MaxValue });
+        var combat = CombatConfig.Default with { UnarmedDamage = long.MaxValue, AllyBonusPercent = int.MaxValue / 4, MaxAllies = 100 };
+        var magic = MagicConfig.Default with { FireboltDamage = long.MaxValue };
+        var trade = TradeConfig.Default with { GuardDamage = long.MaxValue };
+        var skills = SkillConfig.Default with { MaxLevel = SkillConfig.MaxSupportedLevel };
+
+        var world = new SimulationWorld(new SimulationOptions
+        {
+            WorldId = W,
+            Seed = 606,
+            MapWidth = 30,
+            MapHeight = 14,
+            Map = MapOverride.FromRows(Enumerable.Range(0, 14).Select(y => y is 0 or 13 ? new string('^', 30) : "^" + new string('.', 28) + "^").ToList()),
+            Species = species,
+            Vitals = new VitalsConfig(0, 0, 0, 0, 0, 250_000, 100_000, 4),
+            Mind = MindConfig.Default with { FatiguePerTick = 0 },
+            Settlements = SettlementConfig.Default with { FarmPlots = 0 },
+            Combat = combat,
+            Magic = magic,
+            Trade = trade,
+            Skills = skills,
+            Grants = ImmutableSortedDictionary<long, AuthorityGrant>.Empty.Add(God, AuthorityGrant.God),
+        });
+
+        world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 10, 7, Faction.Human, "Keep"));
+        for (int k = 0; k < 3; k++)
+            world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 10, 7, Human));
+        world.Step();
+        world.SetStorageForTest(1, food: 300, wood: 100, coins: 50);
+        long cursor = world.ReadEvents(0, 1).LatestSequence;
+        Run(world, 20, ref cursor);
+
+        var people = world.ReadSnapshot().Chunks.SelectMany(c => c).Where(r => r.VisualKey == Human).Select(r => r.Id.Value).ToList();
+        long guard = people.First(id => world.ReadEntityDetails(W, new EntityId(id))!.Job == Job.Guard);
+        long fighter2 = people.First(id => id != guard);
+        world.SetBraveryForTest(fighter2, 1000);
+        long dragon = Spawn(world, 12, 7, SpeciesCatalog.Dragon, ref cursor);
+
+        // Give guard max combat skill level and wounded 50% health; match ComputeDamageForTest against exact wide-integer reference.
+        world.SetSkillForTest(guard, Skill.Combat, (long)skills.MaxLevel * skills.MaxLevel * skills.XpPerLevelSquared);
+        world.SetHealthForTest(guard, 500_000);
+        long dmgWoundedMaxMelee = world.ComputeDamageForTest(guard, dragon, trade.GuardDamage);
+        long dmgWoundedHalfPower = world.ComputeDamageForTest(guard, dragon, trade.GuardDamage / 2);
+        long dmgWoundedSpell = world.ComputeDamageForTest(guard, dragon, magic.FireboltDamage);
+        long refWoundedMax = WideReference(long.MaxValue, skills.MaxLevel, 500_000, allies: 0, combat.AllyBonusPercent, Default[SpeciesCatalog.Dragon].DamageTakenPercent);
+        long refWoundedHalf = WideReference(long.MaxValue / 2, skills.MaxLevel, 500_000, allies: 0, combat.AllyBonusPercent, Default[SpeciesCatalog.Dragon].DamageTakenPercent);
+
+        Check(dmgWoundedMaxMelee == refWoundedMax && dmgWoundedMaxMelee > 1_000_000,
+            $"melee damage wrapped or differed from wide reference: got {dmgWoundedMaxMelee}, expected {refWoundedMax}");
+        Check(dmgWoundedSpell == refWoundedMax,
+            $"spell damage wrapped or differed from wide reference: got {dmgWoundedSpell}, expected {refWoundedMax}");
+        Check(dmgWoundedHalfPower == refWoundedHalf && dmgWoundedMaxMelee >= dmgWoundedHalfPower,
+            $"monotonicity violated: max={dmgWoundedMaxMelee}, half={dmgWoundedHalfPower}");
+
+        world.SetHealthForTest(guard, 1_000_000);
+        long dmgHealthyMax = world.ComputeDamageForTest(guard, dragon, long.MaxValue);
+        Check(dmgHealthyMax >= dmgWoundedMaxMelee, $"healthy damage {dmgHealthyMax} < wounded damage {dmgWoundedMaxMelee}");
+
+        // Real combat against Dragon must kill Dragon immediately instead of dealing 1 damage after signed overflow.
+        var fightEvents = Run(world, 40, ref cursor);
+        var hit = fightEvents.FirstOrDefault(e => e.Kind == EventKinds.Attacked && e.Target == dragon);
+        Check(hit.Kind == EventKinds.Attacked && hit.Amount == VitalsConfig.MaxHealth,
+            $"expected lethal dragon hit for {VitalsConfig.MaxHealth}, got {(hit.Kind == EventKinds.Attacked ? hit.Amount : -1)}");
+        Check(fightEvents.Any(e => e.Kind == EventKinds.EntityDied && e.Target == dragon),
+            "dragon survived max-damage hit due to overflow wrapping damage to 1");
+    }
+
+    // ---- Finding 7 ------------------------------------------------------------------------------
+
+    private static void ManaAndTrustNearLimitSaturateSafely()
+    {
+        // Reject BaseMana so near long.MaxValue that adding Aptitude (up to 100) could overflow.
+        bool threw = false;
+        try
+        {
+            _ = FlatWorld(magic: MagicConfig.Default with { BaseMana = long.MaxValue - 50 });
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            threw = true;
+        }
+        Check(threw, "MagicConfig.Validate must reserve headroom for Aptitude (+100)");
+
+        // Accepted near-limit configuration: BaseMana = long.MaxValue - 100, TameTrust = int.MaxValue.
+        var nearLimitMagic = MagicConfig.Default with { BaseMana = long.MaxValue - 100, ManaRegenTicks = 5 };
+        var largeTrustSpecies = Default.SetItem(Deer, Default[Deer] with { TameTrust = int.MaxValue });
+        var largeTrustTaming = TamingConfig.Default with
+        {
+            BaseAcceptPercent = 100,
+            TrustPerFeed = int.MaxValue / 2 + 1000,
+            CooldownTicks = 5,
+            GiveUpTicks = 60,
+        };
+
+        var world = FlatWorld(
+            width: 30, height: 14, seed: 707,
+            species: largeTrustSpecies,
+            magic: nearLimitMagic,
+            taming: largeTrustTaming);
+        world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 12, 7, Faction.Human, "Keep"));
+        world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 12, 7, Human));
+        world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 13, 7, Human));
+        world.Step();
+        world.SetStorageForTest(1, food: 300, wood: 100, coins: 50);
+        long cursor = world.ReadEvents(0, 1).LatestSequence;
+        Run(world, 15, ref cursor);
+
+        var people = world.ReadSnapshot().Chunks.SelectMany(c => c).Where(r => r.VisualKey == Human).Select(r => r.Id.Value).ToList();
+        long caster = people.First(id => world.ReadEntityDetails(W, new EntityId(id))!.Job != Job.Guard);
+        var advCaster = world.ReadAdventure(W, new EntityId(caster))!;
+        Check(advCaster.MaxMana > 0 && advCaster.MaxMana <= long.MaxValue, $"MaxMana overflowed: {advCaster.MaxMana}");
+
+        // Set partially filled mana bar just below MaxMana, let excessive regeneration elapse.
+        world.SetManaForTest(caster, advCaster.MaxMana - 3);
+        Run(world, 60, ref cursor); // +12 regen > remaining capacity 3
+        var regenView = world.ReadAdventure(W, new EntityId(caster))!;
+        Check(regenView.Mana == advCaster.MaxMana, $"mana regeneration wrapped/diverged: got {regenView.Mana}, expected {advCaster.MaxMana}");
+
+        // Two large accepted feeds below int.MaxValue must saturate at TameTrust without signed overflow.
+        long deer = Spawn(world, 14, 7, Deer, ref cursor);
+        var tamingEvents = Run(world, 80, ref cursor);
+        var feeds = tamingEvents.Where(e => e.Kind == EventKinds.TameFed && e.Target == deer && e.Reason == 1).ToList();
+        Check(feeds.Count == 2, $"expected 2 accepted feeds to tame deer, got {feeds.Count}");
+        Check(feeds[0].Amount == largeTrustTaming.TrustPerFeed, $"first feed trust {feeds[0].Amount}");
+        Check(feeds[1].Amount == int.MaxValue && world.ReadAdventure(W, new EntityId(deer))!.TamedTo == 1,
+            $"second feed overflowed or failed to tame: Trust={feeds[1].Amount}, TamedTo={world.ReadAdventure(W, new EntityId(deer))!.TamedTo}");
+
+        // Save/Load round-trip must accept both the near-max caster mana anchor and near-max taming trust.
+        byte[] saved = SaveBytes(world);
+        var loaded = SimulationWorld.Load(new MemoryStream(saved));
+        Check(loaded.StateHash() == world.StateHash(), "near-limit save/load hash mismatch");
+        Check(loaded.ReadAdventure(W, new EntityId(caster))!.Mana == advCaster.MaxMana, "loaded caster mana mismatch");
+        Check(loaded.ReadAdventure(W, new EntityId(deer))!.Trust == int.MaxValue, "loaded deer trust mismatch");
     }
 }
