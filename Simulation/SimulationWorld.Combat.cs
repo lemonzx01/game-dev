@@ -279,7 +279,9 @@ public sealed partial class SimulationWorld
         e.TamedTo = r.ReadInt32();
         e.TamerId = r.ReadInt64();
         e.Trust = r.ReadInt32();
-        if (e.Mana < 0 || e.Mana > MaxMana(e) || e.TamedTo < 0 || e.Trust < 0) throw new InvalidDataException("Mana or taming state invalid.");
+        if (e.Mana < 0 || e.ManaTick < 0 || e.ManaTick > tick || e.Mana > MaxMana(e)
+            || e.TamedTo < 0 || e.TamerId < 0 || e.Trust < 0)
+            throw new InvalidDataException("Mana or taming state invalid.");
     }
 
     public AdventureView? ReadAdventure(WorldId worldId, EntityId entityId)
@@ -313,5 +315,8 @@ public sealed partial class SimulationWorld
         e.TamedTo = settlementId;
         e.HomeX = settlements[settlementId - 1].X;
         e.HomeY = settlements[settlementId - 1].Y;
+        if (SpeciesOf(e) is { TameTrust: > 0 } sd) e.Trust = sd.TameTrust;
+        if (e.TamerId == 0)
+            e.TamerId = entities.FirstOrDefault(m => m.LifeState == LifeStates.Alive && m.SettlementId == settlementId)?.Id.Value ?? 0;
     }
 }

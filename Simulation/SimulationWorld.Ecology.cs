@@ -91,6 +91,16 @@ public sealed partial class SimulationWorld
 
     // ---- Hunting -------------------------------------------------------------------------------
 
+    /// <summary>True if <paramref name="hunter"/> is allowed to hunt <paramref name="prey"/>.</summary>
+    private bool CanHunt(EntityState hunter, EntityState prey)
+    {
+        if (prey.LifeState != LifeStates.Alive) return false;
+        var hunts = SpeciesOf(hunter)?.Hunts ?? [];
+        if (!hunts.Contains(prey.Species) || !CanHarm(hunter, prey)) return false;
+        if (hunter.TamedTo != 0 && (SpeciesOf(prey)?.Domestic == true || prey.TamedTo != 0)) return false; // tamed hunters spare livestock and pets
+        return true;
+    }
+
     /// <summary>Nearest living huntable prey within perception (Manhattan, then lower ID).</summary>
     private EntityState? NearestPrey(EntityState e)
     {
@@ -102,8 +112,7 @@ public sealed partial class SimulationWorld
         {
             if (id == e.Id.Value) return;
             var other = entities[FindLive(id)];
-            if (other.LifeState != LifeStates.Alive || !hunts.Contains(other.Species) || !CanHarm(e, other)) return;
-            if (e.TamedTo != 0 && (SpeciesOf(other)?.Domestic == true || other.TamedTo != 0)) return; // tamed hunters spare livestock and pets
+            if (!CanHunt(e, other)) return;
             if (Math.Max(Math.Abs(other.X - e.X), Math.Abs(other.Y - e.Y)) > r) return;
             int d = Math.Abs(other.X - e.X) + Math.Abs(other.Y - e.Y);
             if (d < bestDistance || (d == bestDistance && other.Id.Value < best!.Id.Value)) { best = other; bestDistance = d; }
@@ -114,9 +123,9 @@ public sealed partial class SimulationWorld
     private void HuntStep(EntityState e, long now)
     {
         var prey = FindLive(e.Mind.TargetEntity) is int pi and >= 0 ? entities[pi] : null;
-        if (prey is null || prey.LifeState != LifeStates.Alive)
+        if (prey is null || !(e.Mind.Kind == ActionKind.Hunt ? CanHunt(e, prey) : CanHarm(e, prey)))
         {
-            FinishAction(e, now); // prey killed or lost; the next think looks for the carcass
+            FinishAction(e, now); // prey killed, lost or no longer eligible; next think picks a valid target
             return;
         }
         if (now >= e.Mind.HuntUntil)

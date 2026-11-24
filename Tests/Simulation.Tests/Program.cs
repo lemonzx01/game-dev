@@ -25,7 +25,8 @@ using System.Reflection.PortableExecutable;
     .. T016Tests.Cases,
     .. T017Tests.Cases,
     .. T019Tests.Cases,
-    .. FixR1Tests.Cases
+    .. FixR1Tests.Cases,
+    .. FixR2Tests.Cases
 ];
 int failures = 0;
 foreach (var test in cases)

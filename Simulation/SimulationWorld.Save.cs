@@ -370,6 +370,42 @@ public sealed partial class SimulationWorld
                     && e.TradePartner >= 0 && e.TradePartner <= settlements.Count
                     && e.TamedTo >= 0 && e.TamedTo <= settlements.Count,
                 "Member, taming or trade partner references an unknown settlement.");
+            var sd = SpeciesOf(e);
+            Require(e.TamerId >= 0 && e.TamerId < ids.Next && e.TamerId != e.Id.Value,
+                "Tamer ID invalid or outside entity timeline.");
+            int tameTrust = sd?.TameTrust ?? 0;
+            if (tameTrust == 0)
+            {
+                Require(e.TamedTo == 0 && e.TamerId == 0 && e.Trust == 0, "Untameable entity holds taming state.");
+            }
+            else
+            {
+                Require(e.Trust <= tameTrust, "Entity trust exceeds species TameTrust.");
+                if (e.TamedTo > 0)
+                    Require(e.Trust == tameTrust && e.TamerId > 0, "Tamed entity requires full species trust and a tamer.");
+                else
+                    Require(e.Trust < tameTrust && (e.Trust == 0 || e.TamerId > 0), "Untamed trust state invalid.");
+            }
+            if (e.TamerId > 0)
+            {
+                SpeciesDef? feederSpecies = null;
+                if (FindLive(e.TamerId) is int ti and >= 0)
+                {
+                    var feeder = entities[ti];
+                    feederSpecies = SpeciesOf(feeder);
+                    if (feeder.LifeState == LifeStates.Alive && e.TamedTo > 0)
+                        Require(feeder.SettlementId == e.TamedTo, "Tamed animal feeder belongs to another settlement.");
+                }
+                else if (deathIndex.TryGetValue(e.TamerId, out int di))
+                {
+                    options.Species.TryGetValue(deaths[di].Species, out feederSpecies);
+                }
+                else
+                {
+                    throw new InvalidDataException($"Tamer {e.TamerId} does not exist in entity timeline.");
+                }
+                Require(IsSapient(feederSpecies), "Non-sapient entity cannot be a tamer.");
+            }
             ValidateEntityReading(e);
             if (e.LifeState == LifeStates.Dead)
             {
@@ -556,6 +592,16 @@ public sealed partial class SimulationWorld
 
     internal void AddReadingProgressForTest(long entityId, long book, int pages) =>
         entities[FindLive(entityId)].Reading.Add(new ReadingProgress { Book = book, Pages = pages });
+
+    internal void SetAdventureForTest(long entityId, long? mana = null, long? manaTick = null, int? tamedTo = null, long? tamerId = null, int? trust = null)
+    {
+        var e = entities[FindLive(entityId)];
+        if (mana.HasValue) e.Mana = mana.Value;
+        if (manaTick.HasValue) e.ManaTick = manaTick.Value;
+        if (tamedTo.HasValue) e.TamedTo = tamedTo.Value;
+        if (tamerId.HasValue) e.TamerId = tamerId.Value;
+        if (trust.HasValue) e.Trust = trust.Value;
+    }
 }
 
 /// <summary>
