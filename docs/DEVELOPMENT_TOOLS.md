@@ -6,7 +6,7 @@ All three agents (Codex, Claude Code, Antigravity) may use any tool here; nobody
 
 > **สรุปภาษาไทย**
 > - **ใช้อยู่แล้ว:** pixelfx (ทดสอบแล้ว ใช้ทำเอฟเฟกต์ในเกม)
-> - **แนะนำให้ติดตั้งตอนนี้ (รอเจ้าของอนุมัติการดาวน์โหลด):**
+> - **ติดตั้งแล้วเมื่อ 2026-11-25 (เจ้าของอนุมัติ):**
 >   - jsfxr: สร้างเสียงประกอบแบบ offline เพราะเกมยังไม่มีเสียงเลย
 >   - awesome-gamedev-agent-skills: เลือกเฉพาะบางสกิลของ Godot และ C#
 > - **ลองทีหลัง:** Pixelbolt, godot-dotnet-mcp, FastNoiseLite (ใช้เฉพาะฝั่งภาพ)
@@ -19,8 +19,8 @@ All three agents (Codex, Claude Code, Antigravity) may use any tool here; nobody
 | Tool | Category | License (code / assets) | Offline, no paid API | Fits Godot .NET + Windows | Installed? | Decision |
 |---|---|---|---|---|---|---|
 | [patch-gg/pixelfx](https://github.com/patch-gg/pixelfx) | Agent Skill + External Asset Tool | MIT (© Patch, © Hugo Duprez; some effects adapt Sprite Fusion, MIT) / outputs are ours | Yes (Node only, zero deps) | Yes (sprite sheets + JSON) | **Yes**: `F:\Code\pixelfx`, linked for all 3 agents | **Use now** (in use since T019) |
-| [chr15m/jsfxr](https://github.com/chr15m/jsfxr) | External Asset Tool (SFX) | Unlicense (public domain) | Yes (`sfxr-to-wav` CLI, no runtime deps) | Yes (WAV → Godot AudioStreamWAV) | No | **Install now** (on approval) |
-| [gamedev-skills/awesome-gamedev-agent-skills](https://github.com/gamedev-skills/awesome-gamedev-agent-skills) | Agent Skills (79 + router) | Apache-2.0 (NOTICE: original work) | Yes (Markdown; Python only for its own validation) | Godot 4.7.2 + C# skills present | No | **Install selectively** (on approval) |
+| [chr15m/jsfxr](https://github.com/chr15m/jsfxr) | External Asset Tool (SFX) | Unlicense (public domain) | Yes (`sfxr-to-wav` CLI, no runtime deps) | Yes (WAV → Godot AudioStreamWAV) | **Yes**: `F:\Code\jsfxr` @ `b7b6aa2` (installed 2026-11-25, owner approved) | **Use now** |
+| [gamedev-skills/awesome-gamedev-agent-skills](https://github.com/gamedev-skills/awesome-gamedev-agent-skills) | Agent Skills (79 + router) | Apache-2.0 (NOTICE: original work) | Yes (Markdown; Python only for its own validation) | Godot 4.7.2 + C# skills present | **Yes, 10 skills**: `F:\Code\gamedev-skills` @ `c6ca6c4`, linked for all agents (2026-11-25, owner approved) | **Use now** |
 | [skulitom/Pixelbolt](https://github.com/skulitom/Pixelbolt) | Agent Skill + MCP + External Asset Tool | MIT | Yes (Node ≥20, zero deps, "no API key, no network service") | Yes (PNG sheets; has a `godot/` addon folder) | No | Later trial (overlaps pixelfx + our Python generators) |
 | [LuoxuanLove/godot-dotnet-mcp](https://github.com/LuoxuanLove/godot-dotnet-mcp) | MCP (Godot editor plugin) | MIT | Yes (in-editor service) | Godot 4.6+ .NET | No | Later (only with the editor open; our workflow is headless) |
 | [Auburn/FastNoiseLite](https://github.com/Auburn/FastNoiseLite) | Runtime Library (single C# file) | MIT | Yes | Yes | No | Later, **presentation only** |
@@ -52,29 +52,49 @@ No tool needs a paid API. None is required by the game at runtime except a runti
   - presentation only; never drive outcomes
   - do not use the skill's "Publish on Patch" step
 
-### jsfxr (recommended, not installed)
+### jsfxr (installed)
 - **Helps with:** the game has **no sound at all**. jsfxr makes retro SFX (hit, explosion, power-up, pickup, blip) offline as WAV. It covers attacks, Firebolt, Heal, taming, deaths and UI clicks in minutes. The output is ours, and Unlicense means no attribution is needed.
-- **Use (after install):**
-  1. Design a sound in a local copy of `index.html`, or start from a preset.
-  2. Serialize it to JSON, keep the JSON in `tools/sfx/<name>.sfxr.json`, and render with `node sfxr-to-wav < tools/sfx/hit.sfxr.json Game/Assets/Audio/hit.wav`.
-  3. Import the WAV in Godot.
+- **Install:** shallow clone `F:\Code\jsfxr` (commit `b7b6aa2`, 0.8 MB). No `npm install` needed; dev dependencies are unused.
+- **Use:**
+  1. Design a sound in the local `F:\Code\jsfxr\index.html` (open in a browser, works offline), or start from a preset in Node:
+     `node -e "const {sfxr}=require('F:/Code/jsfxr/sfxr.js'); const p=sfxr.generate('hitHurt'); console.log(p.toB58())"`
+     The module exports `{ sfxr, Params, SoundEffect, convert, ... }`, so use `.sfxr.generate`; the README's `sfxr.generate` assumes the browser global.
+  2. Keep the design in the repo as `tools/sfx/<name>.b58` (or the JSON).
+  3. Render: `node F:/Code/jsfxr/sfxr-to-wav <b58> Game/Assets/Audio/<name>.wav`.
+     **On Windows pass the b58 string as an argument:** the stdin/JSON path reads `/dev/stdin` and fails (ENOENT).
+  4. Import the WAV in Godot (8-bit mono 44.1 kHz by default).
 - **Security read:**
   - `sfxr-to-wav` reads arguments or stdin and writes one WAV
   - `sfxr.js` requires only `./riffwave.js`
   - no install hooks; dev dependencies only (playwright, tape, live-server) are not needed
+- **Tested 2026-11-25:**
+  - `hitHurt`, `pickupCoin`, `powerUp` and `explosion` rendered to valid WAVs (e.g. hit: mono, 8-bit, 44.1 kHz, 0.089 s)
+  - square/saw/sine designs (`pickupCoin`, `powerUp`) re-render **byte-identical**
+  - **noise designs (`wave_type` 3, e.g. `explosion`, many hits) do not**: the synth fills its noise buffer with `Math.random`, so each render differs slightly
 - **Limits:**
-  - `generate(preset)` uses `Math.random`, so always keep the serialized JSON (that is what makes a sound reproducible)
-  - 8-bit style only
+  - `generate(preset)` is random: always keep the b58/JSON design
+  - commit the rendered WAV itself for noise sounds, and treat the design as a source, not a reproducible build input
+  - 8-bit by default (set `sample_size = 16` in a small wrapper if needed)
+  - Node prints a harmless `Buffer()` deprecation warning
+  - importing and playing the WAV in Godot is not tested yet; that belongs to the first audio task
   - playing audio belongs to Godot (a future presentation task); the simulation stays silent
 
-### awesome-gamedev-agent-skills (recommended selectively, not installed)
+### awesome-gamedev-agent-skills (installed selectively)
 - **Helps with:** concise, version-pinned (Godot 4.7.2) references so agents write correct Godot C#, shaders, export settings and UI the first time. That means less trial and error in `Game/**`.
 - **Useful here:**
   - Godot: `godot-csharp`, `godot-shaders`, `godot-ui-control`, `godot-export`, `godot-audio`, `godot-2d-movement` (for T020)
   - general: `procedural-gen`, `save-systems`, `game-feel`, `ai-behavior-trees-utility-ai`
-- **Use:**
-  - Clone once to `F:\Code\gamedev-skills` (like pixelfx) and link only those folders into each agent's skills folder (`~/.claude/skills`, `~/.agents/skills`, `~/.gemini/antigravity/skills`).
-  - **Do not** run `npx skills add … -g`: it installs all 79 skills plus a router into every agent and crowds every session's skill list.
+- **Install:**
+  - shallow clone `F:\Code\gamedev-skills` (commit `c6ca6c4`, 8.2 MB)
+  - the 10 skills above are linked as Windows **junctions** (`New-Item -ItemType Junction`, no admin) into `%USERPROFILE%\.claude\skills`, `%USERPROFILE%\.agents\skills` (Codex) and `%USERPROFILE%\.geminintigravity\skills`, next to `pixelfx`
+  - no router, no other skills
+- **Checked before linking:**
+  - each linked folder holds `SKILL.md` and `references/`; two also have small local GDScript helpers (`check_audio_buses.gd`, `test_character_controller.gd`)
+  - no download, install or API-key commands
+- **Tested 2026-11-25:** Claude Code's skill list shows all 10 right after linking; the same `SKILL.md` reads through the Antigravity and Codex links.
+- **Add or remove one:** create or delete the junction in all three folders; never copy the files.
+- **Do not** run `npx skills add … -g`: it installs all 79 skills plus a router into every agent and crowds every session's skill list.
+- **Update:** `git -C F:\Code\gamedev-skills pull`, with owner approval, then re-read changed skills.
 - **Limits:**
   - generic advice. **AGENTS.md, ARCHITECTURE.md and the owner's decisions win** whenever a skill disagrees (e.g. GOAP, per-entity nodes, non-deterministic RNG).
   - the README carries sponsor links; ignore them.
