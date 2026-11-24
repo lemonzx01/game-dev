@@ -2,9 +2,14 @@
 
 ## Current state
 
-T001–T014 DONE and merged to main (2026-11-24; T003–T014 merged by owner instruction without independent review). Main verified: simulation suite 68/68, Godot acceptance T007 + T008 pass, Game/Sandbox/Benchmarks build. Performance baseline: docs/PERFORMANCE.md (1,000 animals p99 ≈ 3–4 ms/tick). Remaining roadmap: T015 settlements, T016 trade/guards, T017 skills/reading, T018 playtest/build, T019–T020 stretch.
+T001–T014 DONE and merged to main (2026-11-24; T003–T014 merged by owner instruction without independent review). Main verified: simulation suite 68/68, Godot acceptance T007 + T008 pass, Game/Sandbox/Benchmarks build. Performance baseline: docs/PERFORMANCE.md (1,000 animals p99 ≈ 3–4 ms/tick). Playable: `Play.cmd` + docs/PLAYING.md (God tools, F5/F9 save/load). Remaining roadmap: T018 export + owner playtest, T015 settlements, T016 trade/guards, T017 skills/reading, T018 playtest/build, T019–T020 stretch.
 
 ## Handoff log
+
+**2026-11-24 | Claude Code (owner-requested) | T018 part 1 | main | merged**
+
+- Playable build: God mode spawn tool and terrain brush via validated God commands with feed feedback, F5/F9 in-game save/load (drops old cursors, corrupt saves refused), terrain texture refresh, `Play.cmd`, Windows export preset, docs/PLAYING.md. Godot headless: GodTools, T007, T008 acceptances pass on main; simulation 68/68.
+- Blocked on owner: standalone export needs Godot 4.7.2 .NET export templates (1.2 GB download, approval required); 15–30 min playtest.
 
 **2026-11-24 | Claude Code (owner-requested) | T008 + T014 | main | DONE**
 
