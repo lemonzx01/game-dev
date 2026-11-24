@@ -2,9 +2,13 @@
 
 ## Current state
 
-T001–T014 DONE and merged to main (2026-11-24; T003–T014 merged by owner instruction without independent review). Main verified: simulation suite 68/68, Godot acceptance T007 + T008 pass, Game/Sandbox/Benchmarks build. Performance baseline: docs/PERFORMANCE.md (1,000 animals p99 ≈ 3–4 ms/tick). Playable: `Play.cmd` + docs/PLAYING.md (God tools, F5/F9 save/load). Remaining roadmap: T018 export + owner playtest, T015 settlements, T016 trade/guards, T017 skills/reading, T018 playtest/build, T019–T020 stretch.
+T001–T014 DONE and merged to main (2026-11-24; T003–T014 merged by owner instruction without independent review). Main verified: simulation suite 68/68, Godot acceptance T007 + T008 pass, Game/Sandbox/Benchmarks build. Performance baseline: docs/PERFORMANCE.md (1,000 animals p99 ≈ 3–4 ms/tick). Playable: `Play.cmd` + docs/PLAYING.md (God tools, F5/F9 save/load). T015 settlements merged (human Ashford + demon Cinderhold in the opening scene). Remaining roadmap: T018 owner playtest, T016 trade/guards, T017 skills/reading, T018 playtest/build, T019–T020 stretch.
 
 ## Handoff log
+
+**2026-11-24 | Claude Code | T015 settlements | main | merged (self-reviewed, A009)**
+
+- Human/demon settlements with storage, seasonal farm plots and jobs (deliver, harvest, gather, woodcut); identical rules for both peoples; conservation proven over 3,000 ticks; Godot towns display and God founding tool. 74/74 tests; all Godot acceptances pass. Handoff docs/handoffs/T015.md.
 
 **2026-11-24 | Claude Code (owner-requested) | T018 part 1 | main | merged**
 

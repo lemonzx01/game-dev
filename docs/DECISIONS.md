@@ -38,3 +38,6 @@ Claude Code ตรวจลำดับคำสั่ง อายุ snapshot 
 **Kept:** Game Design และ A007 rev 2 (frozen), acceptance criteria, automated/regression tests, branch/worktree ต่องาน, ห้ามแก้ไฟล์เดียวกันพร้อมกัน, handoff, ผู้ใช้ (หรือผู้ที่ผู้ใช้มอบหมาย) รวม TASKS.md / PROGRESS.md, งานที่ต้อง review ต้องใช้ reviewer ที่ไม่ใช่ผู้เขียน
 **Claim mechanism:** branch `feat/<TASK_ID>-<slug>` + `docs/handoffs/<TASK_ID>.md` (IN_PROGRESS) ดู AGENTS.md Workflow 1–2
 **Supersedes:** "Team ownership" เดิมใน AGENTS.md, Role ใน CLAUDE.md / ANTIGRAVITY.md, prompt แยกบทบาทใน START_HERE.md, คอลัมน์ Default owner ใน TASKS.md การมอบ N3 ให้ Antigravity ใน A007 ข้างบนเป็นบันทึกประวัติ ปัจจุบัน N3 ทำโดย AI ใดก็ได้ก่อน T007
+
+## A009 · 2026-11-24 · Accepted (owner) · Process
+**Decision:** The owner waives independent agent review for now: Claude Code reviews and integrates its own work ("รีวิวเองทำเองเลย"). Merges record "self-reviewed"; another agent continues from the handoffs if Claude Code hits its limits. Tests, acceptance evidence and handoffs remain mandatory. Earlier merges marked "without independent review" fall under this decision.
