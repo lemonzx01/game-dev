@@ -19,7 +19,7 @@ public sealed partial class SimulationWorld : ISimulation
     private readonly Queue<QueuedCommand> commands = new();
     private readonly Scheduler scheduler;
     private readonly Terrain[] terrain;
-    private readonly MapView map;
+    private MapView map; // rebuilt when God SetTerrain changes a tile
     private readonly ResourceStore resources;
     private readonly SpatialGrid grid; // derived index of living entities (not hashed)
     private readonly List<EntityState> entities = new(); // ascending EntityId; dead rows leave the tick after death
@@ -104,6 +104,7 @@ public sealed partial class SimulationWorld : ISimulation
             while (commands.Count > 0 && commands.Peek().TargetTick == next)
                 Execute(commands.Dequeue(), next);
             LastDiscretionaryRun = scheduler.Run(next, item => RunWork(item, next));
+            ProcessPaths(next);
             phase?.Invoke();
             if (eventKind.HasValue)
                 Emit(new WorldEvent(0, next, eventKind.Value));
@@ -165,6 +166,8 @@ public sealed partial class SimulationWorld : ISimulation
             TakeResourceCommand t => !InBounds(t.X, t.Y) ? CommandReason.OutOfBounds
                 : !Enum.IsDefined(t.Resource) ? CommandReason.InvalidCommand
                 : t.Amount < 1 ? CommandReason.InvalidAmount : CommandReason.None,
+            SetTerrainCommand g => !InBounds(g.X, g.Y) ? CommandReason.OutOfBounds
+                : !Enum.IsDefined(g.Terrain) ? CommandReason.InvalidCommand : CommandReason.None,
             _ => CommandReason.InvalidCommand,
         };
     }
@@ -206,6 +209,9 @@ public sealed partial class SimulationWorld : ISimulation
                     amount = t.Amount;
                     ScheduleRegrowth(node, now);
                     break;
+                case SetTerrainCommand g:
+                    reason = ApplyTerrain(g);
+                    break;
                 default:
                     reason = CommandReason.InvalidCommand;
                     break;
@@ -215,6 +221,7 @@ public sealed partial class SimulationWorld : ISimulation
         {
             SpawnEntityCommand s => (s.X, s.Y),
             TakeResourceCommand t => (t.X, t.Y),
+            SetTerrainCommand g => (g.X, g.Y),
             _ => (-1, -1),
         };
         Emit(new WorldEvent(0, now, reason == CommandReason.None ? EventKinds.CommandApplied : EventKinds.CommandRejected,
@@ -321,7 +328,7 @@ public sealed partial class SimulationWorld : ISimulation
         using var bytes = new MemoryStream();
         using var writer = new BinaryWriter(bytes);
         // 1. Versions, identity, configuration, clock.
-        writer.Write(4u); // schema
+        writer.Write(5u); // schema
         writer.Write(1u); // RNG version
         writer.Write(worldId.Value);
         writer.Write(options.Seed);
@@ -375,6 +382,7 @@ public sealed partial class SimulationWorld : ISimulation
         resources.WriteCanonical(writer);
         // 4. Scheduled work.
         scheduler.WriteCanonical(writer);
+        WritePathQueue(writer);
         // 5. RNG streams, retained events, durable milestones.
         writer.Write((uint)streamTags.Length);
         foreach (uint tag in streamTags)
@@ -404,6 +412,9 @@ public sealed partial class SimulationWorld : ISimulation
                 break;
             case TakeResourceCommand t:
                 writer.Write(t.X); writer.Write(t.Y); writer.Write((byte)t.Resource); writer.Write(t.Amount);
+                break;
+            case SetTerrainCommand g:
+                writer.Write(g.X); writer.Write(g.Y); writer.Write((byte)g.Terrain);
                 break;
             default:
                 throw new InvalidOperationException("Unknown command in queue.");

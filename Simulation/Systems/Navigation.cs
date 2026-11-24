@@ -11,14 +11,14 @@ internal static class Navigation
 
     /// <returns>Path of cells (excluding the start, ending at the goal), empty if the start is a goal, or null if not found.</returns>
     public static int[]? FindNearest(Terrain[] terrain, int width, int height, int startX, int startY,
-        int radius, int nodeBudget, Func<int, bool> isGoal)
+        int radius, int nodeBudget, Func<int, bool> isGoal, out int expanded)
     {
+        expanded = 0;
         int start = startY * width + startX;
         if (isGoal(start)) return [];
         var parent = new Dictionary<int, int> { [start] = -1 }; // lookup only, never iterated
         var queue = new Queue<int>();
         queue.Enqueue(start);
-        int expanded = 0;
         while (queue.Count > 0 && expanded < nodeBudget)
         {
             int cell = queue.Dequeue();

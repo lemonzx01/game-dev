@@ -14,6 +14,10 @@ internal struct MindState
     public long FatigueTick;     // fatigue anchor
     public long Fatigue;
     public bool Resting;
+    public bool AwaitingPath;     // Eat/Drink waiting in the path queue
+    public long NoFoodUntil;      // cooldown after an unreachable food search
+    public long NoWaterUntil;
+    public int Replans;           // re-plans after a blocked path in the current action
 }
 
 public sealed partial class SimulationWorld
@@ -94,10 +98,6 @@ public sealed partial class SimulationWorld
         return (best, best is null ? 0 : bestDistance);
     }
 
-    private int[]? PathTo(EntityState e, ResourceKind kind) =>
-        Navigation.FindNearest(terrain, options.MapWidth, options.MapHeight, e.X, e.Y,
-            MindCfg.PerceptionRadius, MindCfg.SearchNodeBudget, cell => CanConsumeAt(cell, kind));
-
     // Food: a stocked node on the tile. Water: a stocked water node on a 4-neighbour (water tiles are impassable).
     private bool CanConsumeAt(int cell, ResourceKind kind)
     {
@@ -168,8 +168,7 @@ public sealed partial class SimulationWorld
         {
             case ActionKind.Eat:
             case ActionKind.Drink:
-                path = PathTo(e, kind == ActionKind.Eat ? ResourceKind.Food : ResourceKind.Water);
-                if (path is null) return false; // nothing reachable: infeasible
+                if (OnCooldown(e.Mind, kind, now)) return false; // recently unreachable: infeasible for now
                 break;
             case ActionKind.Flee:
                 if (threat is null || FleeStep(e, threat) < 0) return false;
@@ -187,6 +186,8 @@ public sealed partial class SimulationWorld
         e.Mind.PathIndex = 0;
         e.Mind.TargetEntity = threat?.Id.Value ?? 0;
         e.Mind.FleeStepsDone = 0;
+        e.Mind.Replans = 0;
+        e.Mind.AwaitingPath = false;
         e.Mind.CommitUntil = now + MindCfg.CommitmentTicks;
         Emit(new WorldEvent(0, now, EventKinds.ActionStarted, 0, e.Id.Value, e.Mind.TargetEntity, e.X, e.Y, (int)kind));
 
@@ -196,10 +197,13 @@ public sealed partial class SimulationWorld
             long ticks = Math.Max(1, (fatigue - MindCfg.RestEndFatigue + MindCfg.RestRecoveryPerTick - 1) / MindCfg.RestRecoveryPerTick);
             ScheduleStep(e, now + ticks);
         }
+        else if (kind is ActionKind.Eat or ActionKind.Drink)
+        {
+            RequestPath(e, kind); // searched later within the per-tick path budget
+        }
         else
         {
-            bool arrived = path is { Length: 0 };
-            ScheduleStep(e, now + (arrived ? 1 : MindCfg.MoveTicksPerTile));
+            ScheduleStep(e, now + MindCfg.MoveTicksPerTile);
         }
         return true;
     }
@@ -210,7 +214,8 @@ public sealed partial class SimulationWorld
         e.Mind.Kind = ActionKind.Idle;
         e.Action = (int)ActionKind.Idle;
         e.Mind.Path = null;
-        e.Mind.StepToken++; // cancel any pending step
+        e.Mind.AwaitingPath = false;
+        e.Mind.StepToken++; // cancel any pending step or path request
     }
 
     private void FinishAction(EntityState e, long now)
@@ -246,7 +251,7 @@ public sealed partial class SimulationWorld
                 if (e.Mind.PathIndex < path.Length)
                 {
                     int next = path[e.Mind.PathIndex++];
-                    if (!TerrainRules.IsPassable(terrain[next])) { FinishAction(e, now); return; }
+                    if (!TerrainRules.IsPassable(terrain[next])) { OnPathBlocked(e, now); return; }
                     MoveTo(e, next);
                     if (e.Mind.PathIndex < path.Length) { ScheduleStep(e, now + MindCfg.MoveTicksPerTile); return; }
                 }
@@ -317,6 +322,10 @@ public sealed partial class SimulationWorld
         w.Write(m.FatigueTick);
         w.Write(m.Fatigue);
         w.Write(m.Resting);
+        w.Write(m.AwaitingPath);
+        w.Write(m.NoFoodUntil);
+        w.Write(m.NoWaterUntil);
+        w.Write(m.Replans);
     }
 
     internal int LastDiscretionaryRun { get; private set; }

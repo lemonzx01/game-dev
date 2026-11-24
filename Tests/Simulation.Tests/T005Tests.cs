@@ -216,6 +216,8 @@ internal static class T005Tests
                 open = null;
                 completed++;
             }
+            if (e.Kind == EventKinds.PathFailed && open == (ActionKind)e.Reason)
+                open = null; // T006: an unreachable target ends the action (with cooldown); it was not abandoned
         }
         Check(completed >= 4, $"several needs satisfied ({completed})");
     }

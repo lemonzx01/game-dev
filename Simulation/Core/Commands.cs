@@ -1,6 +1,6 @@
 namespace FantasyWorld.Simulation;
 
-public enum CommandKind { SpawnEntity = 1, TakeResource = 2 }
+public enum CommandKind { SpawnEntity = 1, TakeResource = 2, SetTerrain = 3 }
 
 public static class CommandModes
 {
@@ -29,6 +29,8 @@ public enum CommandReason
     ActorDead = 11,
     UnknownEntity = 12,
     NotNeeded = 13,
+    HasResource = 14,
+    Occupied = 15,
 }
 
 public static class EventKinds
@@ -44,6 +46,8 @@ public static class EventKinds
     public const int EntityDrank = 202;
     /// <summary>Actor = EntityId, Target = threat id (Flee), X/Y = position, Reason = <see cref="ActionKind"/>.</summary>
     public const int ActionStarted = 300;
+    /// <summary>Actor = EntityId, Reason = <see cref="ActionKind"/> whose path search found nothing reachable.</summary>
+    public const int PathFailed = 301;
 }
 
 public static class LifeStates
@@ -64,6 +68,13 @@ public sealed record TakeResourceCommand(WorldId WorldId, long IssuerId, string 
     : GameCommand(WorldId, IssuerId, Mode)
 {
     public override CommandKind Kind => CommandKind.TakeResource;
+}
+
+/// <summary>God tool: change one tile's terrain. Rejected on tiles with resource nodes, or when it would trap a living entity.</summary>
+public sealed record SetTerrainCommand(WorldId WorldId, long IssuerId, string Mode, int X, int Y, Terrain Terrain)
+    : GameCommand(WorldId, IssuerId, Mode)
+{
+    public override CommandKind Kind => CommandKind.SetTerrain;
 }
 
 internal readonly record struct QueuedCommand(long Sequence, long TargetTick, GameCommand Command);
