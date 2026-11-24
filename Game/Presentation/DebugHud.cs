@@ -22,6 +22,7 @@ public partial class DebugHud : Label
         foreach (var chunk in bridge.Snapshot.Chunks)
             entityCount += chunk.Length;
         string gap = bridge.LastGap is { } g ? $"  gap[{g.From}-{g.Through}]" : "";
-        Text = $"Tick {bridge.Snapshot.Tick}  entities {entityCount}  eventCursor {bridge.EventCursor}  backlog {bridge.BacklogSeconds:F2}s{gap}";
+        var time = bridge.Snapshot.Time; // T012: the UI reports the simulation's calendar, never computes it
+        Text = $"Year {time.Year + 1}  {time.Season} day {time.DayOfSeason + 1}  Tick {bridge.Snapshot.Tick}  entities {entityCount}  eventCursor {bridge.EventCursor}  backlog {bridge.BacklogSeconds:F2}s{gap}";
     }
 }
