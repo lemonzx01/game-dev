@@ -6,6 +6,10 @@ T001–T014 DONE and merged to main (2026-11-24; T003–T014 merged by owner ins
 
 ## Handoff log
 
+**2026-11-25 | Claude Code | T018-mood takeover + T019 review integrated | main | merged**
+
+- Codex's T018-mood (stopped at its usage limit, uncommitted) reviewed and finished: town lamp falloff fixed (hard-edged box at dusk), comments, handoff docs/handoffs/T018-mood.md. Codex's T019 review merged (docs/reviews/2026-11-codex-review-T019.md, 15 findings). Combined main with Antigravity's FIX-R1: 101/101 tests, T007/T008/GodTools/Settlement/Effects/Mood acceptances pass.
+
 **2026-11-25 | Google Antigravity | FIX-R1 review fixes for T015–T017 | main | merged (self-reviewed, A009)**
 
 - Fixed all 12 findings from `docs/reviews/2026-11-codex-review-T015-T017.md` on branch `fix/R1-review-T015-T017` (`Simulation/**`, `Tests/**`, `docs/handoffs/FIX-R1.md` only; `ReadSettlements()` signature unchanged, zero `Game/**` changes):
