@@ -269,7 +269,8 @@ public sealed partial class SimulationWorld : ISimulation
         return TemperatureAt(Cell(x, y), tick);
     }
 
-    private void RunWork(WorkItem item, long now)
+    /// <returns>False when the item was stale (superseded token, dead entity) and did no work.</returns>
+    private bool RunWork(WorkItem item, long now)
     {
         switch (item.Kind)
         {
@@ -297,13 +298,13 @@ public sealed partial class SimulationWorld : ISimulation
                 break;
             case WorkKind.Think:
             case WorkKind.ActionStep:
-                RunMindWork(item, now);
-                break;
+                return RunMindWork(item, now);
             case WorkKind.TestNoop:
                 break;
             default:
                 throw new InvalidOperationException($"Unknown work kind {item.Kind}.");
         }
+        return true;
     }
 
     /// <summary>Test hook for scheduler ordering/budget checks through the real world loop.</summary>

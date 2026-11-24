@@ -177,7 +177,12 @@ public sealed partial class SimulationWorld
         candidates[n++] = (50, ActionKind.Wander);
         for (int i = 0; i < n; i++)
             if (candidates[i].Kind == current) candidates[i].Score += cfg.InertiaBonus;
-        var ordered = candidates[..n].ToArray().OrderByDescending(c => c.Score).ThenBy(c => c.Kind);
+        // Insertion sort by (score desc, kind asc): at most 7 candidates, no allocation (T014).
+        for (int i = 1; i < n; i++)
+            for (int j = i; j > 0 && (candidates[j].Score > candidates[j - 1].Score
+                     || (candidates[j].Score == candidates[j - 1].Score && candidates[j].Kind < candidates[j - 1].Kind)); j--)
+                (candidates[j], candidates[j - 1]) = (candidates[j - 1], candidates[j]);
+        var ordered = candidates[..n];
 
         foreach (var (_, kind) in ordered)
         {
@@ -352,11 +357,12 @@ public sealed partial class SimulationWorld
         return -1;
     }
 
-    private void RunMindWork(WorkItem item, long now)
+    private bool RunMindWork(WorkItem item, long now)
     {
         bool think = item.Kind == WorkKind.Think;
-        if (LiveFor(item, think) is not { } e) return; // stale, dead or superseded
+        if (LiveFor(item, think) is not { } e) return false; // stale, dead or superseded: no budget used
         if (think) Think(e, now); else Step(e, now);
+        return true;
     }
 
     private void WriteMind(BinaryWriter w, in MindState m)

@@ -12,6 +12,8 @@ internal readonly record struct PathRequest(long EntityId, ActionKind Kind, long
 public sealed partial class SimulationWorld
 {
     private readonly Queue<PathRequest> pathQueue = new();
+    private Navigation? navigation; // reusable search buffers, created on first use
+
 
     private void RequestPath(EntityState e, ActionKind kind)
     {
@@ -39,7 +41,8 @@ public sealed partial class SimulationWorld
             // Stale: entity died, switched action (e.g. fled) or already re-requested.
             if (e.LifeState != LifeStates.Alive || !e.Mind.AwaitingPath || e.Mind.Kind != request.Kind || e.Mind.StepToken != request.Token)
                 continue;
-            var path = Navigation.FindNearest(terrain, options.MapWidth, options.MapHeight, e.X, e.Y,
+            navigation ??= new Navigation(terrain.Length);
+            var path = navigation.FindNearest(terrain, options.MapWidth, options.MapHeight, e.X, e.Y,
                 MindCfg.PerceptionRadius, MindCfg.SearchNodeBudget,
                 cell => request.Kind == ActionKind.Eat ? CanEatAt(e, cell) : CanConsumeAt(cell, ResourceKind.Water), out int expanded);
             remaining -= expanded;
@@ -118,4 +121,13 @@ public sealed partial class SimulationWorld
     internal long LastPathExpansions { get; private set; }
     internal int LastPathsServed { get; private set; }
     internal int PendingPathRequests => pathQueue.Count;
+
+    /// <summary>Path-queue backlog for the T014 benchmark (read-only diagnostics).</summary>
+    public int PendingPathRequestsForBenchmark { get { CheckAccess(); return pathQueue.Count; } }
+
+    /// <summary>Pending discretionary decisions (read-only diagnostics for benchmarks/profiling).</summary>
+    public int PendingDecisionsForBenchmark { get { CheckAccess(); return scheduler.DiscretionaryCount; } }
+
+    /// <summary>Decisions already overdue at the next tick, including stale entries (diagnostics, O(n)).</summary>
+    public int OverdueDecisionsForBenchmark { get { CheckAccess(); return scheduler.OverdueDiscretionary(tick + 1); } }
 }

@@ -48,8 +48,12 @@ internal sealed class Scheduler
         (isRequired ? required : discretionary).Enqueue(item, key);
     }
 
-    /// <summary>Runs all due required work, then up to the budget of due discretionary work. Returns discretionary items run.</summary>
-    public int Run(long tick, Action<WorkItem> execute)
+    /// <summary>
+    /// Runs all due required work, then due discretionary work until <see cref="DiscretionaryBudget"/> items have done real
+    /// work. <paramref name="execute"/> returns false for a stale (superseded) item: it is dequeued but does not consume
+    /// budget, so stale entries cannot starve live decisions (T014). Returns discretionary items that did work.
+    /// </summary>
+    public int Run(long tick, Func<WorkItem, bool> execute)
     {
         runningTick = tick;
         try
@@ -63,8 +67,7 @@ internal sealed class Scheduler
             while (done < DiscretionaryBudget && discretionary.TryPeek(out var item, out var key) && key.DueTick <= tick)
             {
                 discretionary.Dequeue();
-                execute(item);
-                done++;
+                if (execute(item)) done++;
             }
             return done;
         }
@@ -75,6 +78,9 @@ internal sealed class Scheduler
     }
 
     internal long RunningTick => runningTick;
+
+    /// <summary>Discretionary items already past due at <paramref name="tick"/> (diagnostics; O(n)).</summary>
+    internal int OverdueDiscretionary(long tick) => discretionary.UnorderedItems.Count(e => e.Priority.DueTick < tick);
 
     /// <summary>All pending work with its key and queue (save/load).</summary>
     internal IEnumerable<(WorkItem Item, WorkKey Key, bool Required)> Pending() =>
