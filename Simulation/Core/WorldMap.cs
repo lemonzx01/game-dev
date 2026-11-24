@@ -10,6 +10,31 @@ public sealed record MapView(int Width, int Height, ImmutableArray<Terrain> Cell
     public Terrain At(int x, int y) => Cells[y * Width + x];
 }
 
+/// <summary>Explicit resource node for a hand-built map.</summary>
+public readonly record struct ResourcePlacement(int X, int Y, ResourceKind Kind, int Amount);
+
+/// <summary>Hand-built map used instead of seeded generation (test scenarios, benchmarks). Dimensions must match the options.</summary>
+public sealed record MapOverride(int Width, int Height, ImmutableArray<Terrain> Cells, ImmutableArray<ResourcePlacement> Resources)
+{
+    /// <summary>Builds a map from text rows: '~' water, '.' grass, 'T' forest, '^' mountain, '*' snow.</summary>
+    public static MapOverride FromRows(IReadOnlyList<string> rows, params ResourcePlacement[] resources)
+    {
+        int h = rows.Count, w = rows[0].Length;
+        var cells = ImmutableArray.CreateBuilder<Terrain>(w * h);
+        foreach (string row in rows)
+        {
+            if (row.Length != w) throw new ArgumentException("Ragged map rows.");
+            foreach (char ch in row)
+                cells.Add(ch switch
+                {
+                    '~' => Terrain.Water, '.' => Terrain.Grass, 'T' => Terrain.Forest, '^' => Terrain.Mountain, '*' => Terrain.Snow,
+                    _ => throw new ArgumentException($"Unknown map char '{ch}'."),
+                });
+        }
+        return new MapOverride(w, h, cells.MoveToImmutable(), [.. resources]);
+    }
+}
+
 internal static class TerrainRules
 {
     public static bool IsPassable(Terrain t) => t is Terrain.Grass or Terrain.Forest or Terrain.Snow;

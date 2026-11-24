@@ -33,6 +33,7 @@ internal static class T003Tests
             Seed = seed,
             MapWidth = size,
             MapHeight = size,
+            Mind = MindConfig.Disabled, // T003 checks commands/map only; AI is covered by T005
             Grants = ImmutableSortedDictionary<long, AuthorityGrant>.Empty
                 .Add(God, AuthorityGrant.God | AuthorityGrant.Observe)
                 .Add(Watcher, AuthorityGrant.Observe),

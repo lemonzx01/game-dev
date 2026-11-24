@@ -1,6 +1,6 @@
 namespace FantasyWorld.Simulation;
 
-internal enum WorkKind { RegrowResource = 1, EntityDeath = 2, TestNoop = 99 }
+internal enum WorkKind { RegrowResource = 1, EntityDeath = 2, Think = 3, ActionStep = 4, TestNoop = 99 }
 
 /// <summary>Ordering key from ARCHITECTURE §4: (due tick, priority, EntityId, enqueue ordinal), all ascending.</summary>
 internal readonly record struct WorkKey(long DueTick, int Priority, long EntityId, long Ordinal) : IComparable<WorkKey>
@@ -14,7 +14,8 @@ internal readonly record struct WorkKey(long DueTick, int Priority, long EntityI
     }
 }
 
-internal readonly record struct WorkItem(WorkKind Kind, long Subject);
+/// <summary>Token lets an entity supersede its own pending item: only the item whose token matches the entity's current one runs.</summary>
+internal readonly record struct WorkItem(WorkKind Kind, long Subject, long Token = 0);
 
 /// <summary>
 /// Deterministic tick scheduler. Required work (vitals, death, environment) always runs at its due tick;
@@ -92,6 +93,7 @@ internal sealed class Scheduler
             writer.Write(key.Ordinal);
             writer.Write((int)item.Kind);
             writer.Write(item.Subject);
+            writer.Write(item.Token);
         }
     }
 }

@@ -12,6 +12,7 @@ internal sealed class EntityState
     public long ScheduledDeathTick = long.MaxValue; // only the item due at this tick is live; older items are stale
     public long DeathTick = -1;
     public DeathCause Cause;
+    public MindState Mind;
 
     public EntityRow Row => new(Id, X, Y, Species, Action, LifeState);
 }
@@ -34,7 +35,9 @@ public sealed partial class SimulationWorld
             Vitals = new VitalsAnchor(now, 0, 0, VitalsConfig.MaxHealth),
         };
         entities.Add(entity); // IDs are monotonic, so the list stays sorted by ID
+        grid.Add(id.Value, x, y);
         ScheduleDeath(entity);
+        InitMind(entity, now);
         return id.Value;
     }
 
@@ -57,7 +60,9 @@ public sealed partial class SimulationWorld
         if (deathTick != now) throw new InvalidOperationException($"Entity {entityId} death booked at {now} but due {deathTick}.");
         var v = e.Vitals.At(now, options.Vitals);
         e.LifeState = LifeStates.Dead;
-        e.Action = 0; // actions invalidated immediately
+        StartIdle(e, now);  // actions invalidated immediately (pending step superseded)
+        e.Mind.ThinkToken++; // pending think superseded
+        grid.Remove(e.Id.Value, e.X, e.Y);
         e.DeathTick = now;
         e.Cause = cause;
         e.ScheduledDeathTick = long.MaxValue;
@@ -191,6 +196,7 @@ public sealed partial class SimulationWorld
             writer.Write(e.ScheduledDeathTick);
             writer.Write(e.DeathTick);
             writer.Write((int)e.Cause);
+            WriteMind(writer, e.Mind);
         }
         writer.Write((uint)deaths.Count);
         foreach (var r in deaths)

@@ -94,6 +94,23 @@ internal sealed class ResourceStore
         return new ResourceStore(list.ToArray(), config);
     }
 
+    public static ResourceStore FromPlacements(MapOverride map, ResourceConfig config)
+    {
+        var list = new List<ResourceNode>();
+        foreach (var p in map.Resources.OrderBy(p => p.Y * map.Width + p.X).ThenBy(p => (byte)p.Kind))
+        {
+            if ((uint)p.X >= (uint)map.Width || (uint)p.Y >= (uint)map.Height) throw new ArgumentException($"Resource {p} out of bounds.");
+            if (p.Amount < 0 || p.Amount > config.RuleFor(p.Kind).Capacity) throw new ArgumentException($"Resource {p} amount outside 0..capacity.");
+            var t = map.Cells[p.Y * map.Width + p.X];
+            bool fits = p.Kind == ResourceKind.Water ? t == Terrain.Water : TerrainRules.IsPassable(t);
+            if (!fits) throw new ArgumentException($"Resource {p} not allowed on {t}.");
+            int cell = p.Y * map.Width + p.X;
+            if (list.Count > 0 && list[^1].Cell == cell && list[^1].Kind == p.Kind) throw new ArgumentException($"Duplicate resource {p}.");
+            list.Add(new ResourceNode { Cell = cell, Kind = p.Kind, Amount = p.Amount });
+        }
+        return new ResourceStore(list.ToArray(), config);
+    }
+
     private static void Add(List<ResourceNode> list, int cell, ResourceKind kind, ResourceConfig config) =>
         list.Add(new ResourceNode { Cell = cell, Kind = kind, Amount = config.RuleFor(kind).Capacity });
 

@@ -42,6 +42,8 @@ public static class EventKinds
     /// <summary>Actor = EntityId, X/Y = resource tile, Amount = units consumed.</summary>
     public const int EntityAte = 201;
     public const int EntityDrank = 202;
+    /// <summary>Actor = EntityId, Target = threat id (Flee), X/Y = position, Reason = <see cref="ActionKind"/>.</summary>
+    public const int ActionStarted = 300;
 }
 
 public static class LifeStates

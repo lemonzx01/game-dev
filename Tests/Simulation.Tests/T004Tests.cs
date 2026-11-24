@@ -34,6 +34,7 @@ internal static class T004Tests
         MapWidth = 64,
         MapHeight = 64,
         Vitals = vitals,
+        Mind = MindConfig.Disabled, // vitals in isolation; AI is covered by T005
         Resources = resources ?? ResourceConfig.Default,
         Grants = ImmutableSortedDictionary<long, AuthorityGrant>.Empty.Add(God, AuthorityGrant.God),
     });

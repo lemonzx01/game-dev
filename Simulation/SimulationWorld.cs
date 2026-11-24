@@ -21,6 +21,7 @@ public sealed partial class SimulationWorld : ISimulation
     private readonly Terrain[] terrain;
     private readonly MapView map;
     private readonly ResourceStore resources;
+    private readonly SpatialGrid grid; // derived index of living entities (not hashed)
     private readonly List<EntityState> entities = new(); // ascending EntityId; dead rows leave the tick after death
     private long tick;
     private long nextCommandSequence = 1;
@@ -40,9 +41,19 @@ public sealed partial class SimulationWorld : ISimulation
 
         var generation = new RandomStream(options.Seed, WorldGenerationStream, 0);
         streams.Add(WorldGenerationStream, generation);
-        terrain = MapGenerator.Generate(options.MapWidth, options.MapHeight, generation);
+        if (options.Map is { } custom)
+        {
+            terrain = custom.Cells.ToArray();
+            resources = ResourceStore.FromPlacements(custom, options.Resources);
+        }
+        else
+        {
+            terrain = MapGenerator.Generate(options.MapWidth, options.MapHeight, generation);
+            resources = ResourceStore.Generate(terrain, options.MapWidth, options.MapHeight, options.Resources, generation);
+        }
         map = new MapView(options.MapWidth, options.MapHeight, ImmutableArray.Create(terrain));
-        resources = ResourceStore.Generate(terrain, options.MapWidth, options.MapHeight, options.Resources, generation);
+        grid = new SpatialGrid(options.MapWidth, options.MapHeight);
+        streams.Add(AiStream, new RandomStream(options.Seed, AiStream, 0));
 
         // Prewarm is part of the baseline configuration; insertion order must not affect the hash.
         foreach (uint tag in options.PrewarmStreams)
@@ -92,7 +103,7 @@ public sealed partial class SimulationWorld : ISimulation
             entities.RemoveAll(e => e.LifeState == LifeStates.Dead);
             while (commands.Count > 0 && commands.Peek().TargetTick == next)
                 Execute(commands.Dequeue(), next);
-            scheduler.Run(next, item => RunWork(item, next));
+            LastDiscretionaryRun = scheduler.Run(next, item => RunWork(item, next));
             phase?.Invoke();
             if (eventKind.HasValue)
                 Emit(new WorldEvent(0, next, eventKind.Value));
@@ -237,6 +248,10 @@ public sealed partial class SimulationWorld : ISimulation
             case WorkKind.EntityDeath:
                 RunDeath(item.Subject, now);
                 break;
+            case WorkKind.Think:
+            case WorkKind.ActionStep:
+                RunMindWork(item, now);
+                break;
             case WorkKind.TestNoop:
                 break;
             default:
@@ -306,7 +321,7 @@ public sealed partial class SimulationWorld : ISimulation
         using var bytes = new MemoryStream();
         using var writer = new BinaryWriter(bytes);
         // 1. Versions, identity, configuration, clock.
-        writer.Write(3u); // schema
+        writer.Write(4u); // schema
         writer.Write(1u); // RNG version
         writer.Write(worldId.Value);
         writer.Write(options.Seed);
@@ -333,6 +348,7 @@ public sealed partial class SimulationWorld : ISimulation
         foreach (long v in new[] { vc.HungerPerTick, vc.ThirstPerTick, vc.StarvationDamagePerTick, vc.DehydrationDamagePerTick,
                      vc.RegenPerTick, vc.FoodPerUnit, vc.WaterPerUnit, vc.MaxUnitsPerAct })
             writer.Write(v);
+        options.Mind.WriteCanonical(writer);
         writer.Write(tick);
         // 2. Counters, accepted command queue in execution order, trusted grants.
         writer.Write(ids.Next);
