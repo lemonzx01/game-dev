@@ -6,6 +6,10 @@ T001–T014 DONE and merged to main (2026-11-24; T003–T014 merged by owner ins
 
 ## Handoff log
 
+**2026-11-24 | Claude Code | T018 character art pass | main | merged (self-reviewed, A009)**
+
+- Project-owned animated 24 px character sheet (8 human + 4 demon variants, sheep, deer, rabbit, wolf; idle/walk/work/attack/read/dead) from tools/art/make_characters.py; renderer glides creatures between cells, mirrors facing, depth-sorts and picks poses from actions. All Godot acceptances pass. Handoff docs/handoffs/T018-art.md.
+
 **2026-11-24 | Claude Code | T017 skills and reading | main | merged (self-reviewed, A009)**
 
 - Six skills with XP only from real activity (harvest, gather, hits, sales, pages); small level effects. Reading at the town centre in sessions; interrupted sessions credit exactly the pages read, finished books never re-award XP. Schema 12. 82/82 tests; all Godot acceptances pass; 1,000-entity p99 3.1 ms. Handoff docs/handoffs/T017.md.
