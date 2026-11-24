@@ -20,8 +20,13 @@ public partial class SandboxMain : Node2D
     private SandboxCamera2D _camera = null!;
     private SandboxHud _hud = null!;
     private SpriteRenderBenchmark _benchmark = null!;
+    private ChunkedTerrainPreview _terrainChunks = null!;
+    private CanvasModulate _seasonModulate = null!;
+    private Node2D _overlayLayer = null!;
     private Node2D _showcaseRoot = null!;
     private Sprite2D _godGhostPreview = null!;
+    private Sprite2D _worldSelectionRing = null!;
+    private Image _minimapImage = null!;
 
     private List<MockEntityVisual> _entities = new();
     private List<MockPropPlacement> _props = new();
@@ -50,7 +55,18 @@ public partial class SandboxMain : Node2D
         Texture2D uiIconsAtlas = _textures.LoadPlaceholder("vfx_ui_icons_placeholder.png");
         Texture2D vfxEffectsAtlas = _textures.LoadPlaceholder("vfx_effects_16x16_placeholder.png");
 
-        BuildTerrainBatch(terrainAtlas);
+        var terrainGrid = MockWorldFixture.BuildMockTerrainGrid();
+        _terrainChunks = new ChunkedTerrainPreview { Name = "ChunkedTerrainPreview", ZIndex = -10 };
+        AddChild(_terrainChunks);
+        _terrainChunks.Initialize(terrainGrid, terrainAtlas, _multiMeshShader);
+
+        _seasonModulate = new CanvasModulate { Name = "SeasonModulate", Color = Colors.White };
+        AddChild(_seasonModulate);
+
+        _overlayLayer = new Node2D { Name = "OverlayLayer", Visible = false, ZIndex = 12 };
+        AddChild(_overlayLayer);
+        BuildMockOverlayZones();
+
         BuildPropsBatch(plantsAtlas, creatureAtlas);
         BuildModularShowcase(humanoidAtlas, vfxEffectsAtlas);
 
@@ -64,6 +80,17 @@ public partial class SandboxMain : Node2D
         _camera = new SandboxCamera2D { Name = "SandboxCamera2D" };
         AddChild(_camera);
 
+        _worldSelectionRing = new Sprite2D
+        {
+            Name = "WorldSelectionRing",
+            Texture = humanoidAtlas,
+            RegionEnabled = true,
+            RegionRect = new Rect2(224, 0, 32, 32),
+            TextureFilter = TextureFilterEnum.Nearest,
+            ZIndex = 3
+        };
+        AddChild(_worldSelectionRing);
+
         _godGhostPreview = new Sprite2D
         {
             Name = "GodGhostPreview",
@@ -76,9 +103,12 @@ public partial class SandboxMain : Node2D
         };
         AddChild(_godGhostPreview);
 
+        _minimapImage = MockWorldFixture.BuildMinimapImage(terrainGrid);
+        var minimapTex = ImageTexture.CreateFromImage(_minimapImage);
+
         _hud = new SandboxHud { Name = "SandboxHud" };
         AddChild(_hud);
-        _hud.BuildUi(MockWorldFixture.BuildMockEvents(), MockWorldFixture.BuildMockNpcDetails());
+        _hud.BuildUi(MockWorldFixture.BuildMockEvents(), MockWorldFixture.BuildMockNpcDetails(), minimapTex);
         WireHudEvents();
 
         if (ShouldRunAutomatedTests())
@@ -127,9 +157,35 @@ public partial class SandboxMain : Node2D
             _godGhostPreview.Visible = false;
         }
 
+        if (_hud.SelectedEntityId.HasValue)
+        {
+            var sel = _entities.FirstOrDefault(e => e.Id == _hud.SelectedEntityId.Value);
+            if (sel != null)
+            {
+                _worldSelectionRing.Visible = true;
+                _worldSelectionRing.Position = SpriteRenderBenchmark.ResolvePreviewPos(sel, _elapsedSec, _orbitPaused, _speedScale) + new Vector2(0f, 8f);
+            }
+            else
+            {
+                _worldSelectionRing.Visible = false;
+            }
+        }
+        else
+        {
+            _worldSelectionRing.Visible = false;
+        }
+
         Rect2 visibleRect = _camera.GetVisibleWorldRect(GetViewportRect().Size, 96f);
+        _terrainChunks.UpdateVisibleChunks(visibleRect);
         var metrics = _benchmark.UpdateRender(visibleRect, _camera.Zoom.X, _elapsedSec, _orbitPaused, _speedScale);
-        _hud.UpdateMetrics(metrics, (float)Engine.GetFramesPerSecond(), _camera.Zoom.X, _camera.Position);
+        _hud.UpdateMetrics(
+            metrics,
+            (float)Engine.GetFramesPerSecond(),
+            _camera.Zoom.X,
+            _camera.Position,
+            _terrainChunks.VisibleChunkCount,
+            _terrainChunks.TotalChunkCount,
+            _camera.GetVisibleWorldRect(GetViewportRect().Size, 0f));
 
         if (_vulkanDrawCallBench)
         {
@@ -196,6 +252,43 @@ public partial class SandboxMain : Node2D
             _orbitPaused = paused;
             _speedScale = speed;
         };
+        _hud.StepOnceRequested += () => _elapsedSec += 0.1f;
+        _hud.SeasonChanged += season => _seasonModulate.Color = ChunkedTerrainPreview.GetSeasonModulateColor(season);
+        _hud.OverlayChanged += overlay => UpdateOverlayDisplay(overlay);
+        _hud.MinimapPanRequested += worldPos =>
+        {
+            _camera.StopFollow();
+            _camera.Position = worldPos;
+        };
+    }
+
+    private void BuildMockOverlayZones()
+    {
+        _overlayLayer.AddChild(new ColorRect
+        {
+            Name = "PopulationOverlayBox",
+            Position = new Vector2(24 * 16f, 20 * 16f),
+            Size = new Vector2(22 * 16f, 18 * 16f),
+            Color = new Color(0.2f, 0.8f, 0.4f, 0.25f)
+        });
+        _overlayLayer.AddChild(new ColorRect
+        {
+            Name = "ThreatOverlayBox",
+            Position = new Vector2(39 * 16f, 30 * 16f),
+            Size = new Vector2(10 * 16f, 10 * 16f),
+            Color = new Color(0.95f, 0.2f, 0.2f, 0.30f)
+        });
+    }
+
+    private void UpdateOverlayDisplay(MockOverlayMode mode)
+    {
+        _overlayLayer.Visible = mode != MockOverlayMode.None;
+        if (!_overlayLayer.Visible)
+        {
+            return;
+        }
+        _overlayLayer.GetNode<ColorRect>("PopulationOverlayBox").Visible = mode == MockOverlayMode.Population;
+        _overlayLayer.GetNode<ColorRect>("ThreatOverlayBox").Visible = mode == MockOverlayMode.Threat;
     }
 
     private void SelectNearestMockEntity(Vector2 worldPos)
@@ -255,44 +348,7 @@ public partial class SandboxMain : Node2D
             999, "God", $"[MOCK PREVIEW] Dropped {species} visual marker at ({snapped.X:0},{snapped.Y:0})", snapped, id));
     }
 
-    private void BuildTerrainBatch(Texture2D terrainAtlas)
-    {
-        var grid = MockWorldFixture.BuildMockTerrainGrid();
-        int totalTiles = MockWorldFixture.MapTilesX * MockWorldFixture.MapTilesY;
-
-        var mm = new MultiMesh
-        {
-            TransformFormat = MultiMesh.TransformFormatEnum.Transform2D,
-            UseColors = true,
-            UseCustomData = true,
-            Mesh = SpriteRenderBenchmark.CreateTopDownQuadMesh(16f, 16f),
-            InstanceCount = totalTiles,
-            VisibleInstanceCount = totalTiles
-        };
-
-        int idx = 0;
-        for (int y = 0; y < MockWorldFixture.MapTilesY; y++)
-        {
-            for (int x = 0; x < MockWorldFixture.MapTilesX; x++)
-            {
-                int tile = (int)grid[x, y];
-                mm.SetInstanceTransform2D(idx, new Transform2D(0f, new Vector2(x * 16f + 8f, y * 16f + 8f)));
-                mm.SetInstanceColor(idx, Colors.White);
-                mm.SetInstanceCustomData(idx, new Color(tile / 8f, 0f, 1f / 8f, 1f));
-                idx++;
-            }
-        }
-
-        AddChild(new MultiMeshInstance2D
-        {
-            Name = "TerrainTileBatch",
-            Texture = terrainAtlas,
-            TextureFilter = TextureFilterEnum.Nearest,
-            Material = new ShaderMaterial { Shader = _multiMeshShader },
-            Multimesh = mm,
-            ZIndex = -10
-        });
-    }
+    // Legacy flat batch method replaced by ChunkedTerrainPreview.cs (16x16 chunks + frustum culling).
 
     private void BuildPropsBatch(Texture2D plantsAtlas, Texture2D buildingsAtlas)
     {
@@ -535,6 +591,21 @@ public partial class SandboxMain : Node2D
         _showcaseRigs[0].ApplyMockVisual(sleepTestEntity, isSelected: true, pose: MockAnimPose.Walk);
         AssertTrue(_showcaseRigs[0].GetNode<Sprite2D>("BodyBase").RegionRect.Position == new Vector2(0, 32), "Walk pose switches to walk atlas frame");
         GD.Print("[PASS] Modular Character layer rules & Sleep/Walk/Dead poses verified.");
+
+        // 3b. Verify ChunkedTerrainPreview (64 chunks), frustum culling, dirty rebuild, Season tint, and Minimap.
+        AssertTrue(_terrainChunks.TotalChunkCount == 64, "128x128 map splits into 64 16x16 chunks");
+        int initialRebuilds = _terrainChunks.DirtyRebuildsCount;
+        _camera.Position = new Vector2(528f, 416f);
+        _camera.SetZoomScalar(2.0f);
+        Rect2 zoomedInRect = _camera.GetVisibleWorldRect(viewport, 64f);
+        _terrainChunks.UpdateVisibleChunks(zoomedInRect);
+        AssertTrue(_terrainChunks.VisibleChunkCount < 64 && _terrainChunks.VisibleChunkCount > 0, "Chunk frustum culling hides off-screen chunks");
+        _terrainChunks.MarkTileDirty(33, 26, MockTileKind.Dirt);
+        _terrainChunks.UpdateVisibleChunks(zoomedInRect);
+        AssertTrue(_terrainChunks.DirtyRebuildsCount == initialRebuilds + 1, "Dirty tile rebuilds only 1 affected chunk");
+        AssertTrue(_minimapImage.GetWidth() == 128 && _minimapImage.GetHeight() == 128, "Minimap image is 128x128");
+        AssertTrue(ChunkedTerrainPreview.GetSeasonModulateColor(MockSeasonVisual.Winter) != ChunkedTerrainPreview.GetSeasonModulateColor(MockSeasonVisual.Spring), "Season tint distinguishes Winter vs Spring");
+        GD.Print($"[PASS] ChunkedTerrainPreview (64 chunks, visible={_terrainChunks.VisibleChunkCount}, dirty rebuild=+1), Minimap, and Season tint verified.");
 
         // 4. Sprite batching & optimization benchmark across 100, 1000, 5000 mock sprites.
         _camera.Position = new Vector2(1024f, 1024f);

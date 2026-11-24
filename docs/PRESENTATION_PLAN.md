@@ -24,12 +24,15 @@
 ### 1.3 งานที่ทำสำเร็จในพื้นที่ทดสอบแยก (`Sandbox/PresentationTest/`)
 - สร้างพื้นที่ทดสอบแยกจาก Production Code ใช้ **Mock Data ชั่วคราว** (`MockData/MockWorldData.cs`) และไม่เชื่อมต่อ `ISimulation` ใด ๆ
 - **ชุด Placeholder Pixel-Art Atlases (`Assets/Placeholders/` + `Assets/CREDITS.md`):** ครบ 6 ชุด (Terrain, Modular Humanoid, Creatures & Buildings + True Dragon `64×64`, Plants & Flora, UI Icons, และ Combat/Magic/Weather VFX)
-- **ผลทดสอบ `dotnet 10.0.404` + `Godot 4.7.2 .NET` (Release Build):**
-  - Headless unit/invariant tests (`--run-sandbox-tests`): ผ่านครบทั้ง Asset dimensions, Camera zoom-to-cursor (`< 0.01 px` drift), Modular Character 7 layers (`Human` / `Demon` / `Dead`), และ Sprite optimization benchmark
+- **ระบบแสดงผลที่ทดลองและยืนยันแล้วใน Sandbox:**
+  - `ChunkedTerrainPreview.cs`: แบ่งแผนที่ `128×128` เป็น `64` chunks (`16×16` tiles/chunk) พร้อม frustum culling (`Visible=12/64` ที่ `2×` zoom) และ dirty-chunk rebuild เฉพาะ chunk ที่เปลี่ยน (`+1`) + `CanvasModulate` สำหรับ `Spring/Summer/Autumn/Winter/Night`
+  - `SandboxHud.cs`: Observer HUD ครบทั้ง Top Bar (`Pause/1x/2x/4x/+1 Step`, `Observer/God`, `Season`, `LOD`, `Overlay: None/Population/Threat`, `Backlog` demo), `EventFeed` + `Test Gap UI`, `Minimap` (`128×128` คลิกเลื่อนกล้อง + viewport box), `NPC Inspector` (`Dead History`), `WorldSelectionRing` และ `ModularCharacterPreview` (`7` เลเยอร์ + `Walk/WorkAttack/Sleep/Dead`)
+- **ผลทดสอบ `dotnet 10.0.404` (`global.json`) + `Godot 4.7.2 .NET` (Release Build):**
+  - Headless unit/invariant tests (`--run-sandbox-tests`): ผ่านครบทั้ง 6 Atlas dimensions, Mock Event Gap UI / `OutcomeUnknown` / `ReadHistory` catch-up, Camera zoom-to-cursor (`< 0.01 px` drift), Modular Character 7 layers (`Human` / `Demon` / `Sleep` / `Walk` / `Dead`), `ChunkedTerrainPreview` (`64` chunks, culling, dirty rebuild `+1`), `Minimap` (`128×128`), Season tint และ Sprite optimization benchmark
   - **Sprite Batching Benchmark (`N=5,000`, `1280×720`, zoom `0.5×`):**
-    - Headless (`Visible=4,021`): `CulledNodePool` `0.266 ms` (`300 nodes`), `MultiMeshBulkBuffer` `0.497 ms` (`2 nodes`), `NaiveNodes` `3.075 ms` (`5,000 nodes`)
-    - Vulkan Forward+ (`Visible=4,204`): `MultiMeshBulkBuffer` **`DrawCalls=113`**, `ObjectsInFrame=1,146` vs `NaiveNodes` **`DrawCalls=1,099`**, `ObjectsInFrame=4,902`
-  - **ข้อสรุปทางสถาปัตยกรรม:** สำหรับ `Game/` จริง ใช้ **AutoLOD = `CulledNodePool` เมื่อซูมใกล้/จำนวนในจอน้อย (`<= 250`) และ `MultiMeshBulkBuffer` เมื่อซูมไกล/ฝูงชนหนาแน่น**
+    - Headless (`Visible=4,021`): `CulledNodePool` `0.518 ms` (`300 nodes`), `MultiMeshBulkBuffer` `1.006 ms` (`2 nodes`), `NaiveNodes` `4.972 ms` (`5,000 nodes`)
+    - Vulkan Forward+ (`Visible=4,204`, measured prior to chunking update): `MultiMeshBulkBuffer` **`DrawCalls=113`**, `ObjectsInFrame=1,146` vs `NaiveNodes` **`DrawCalls=1,099`**, `ObjectsInFrame=4,902`
+  - **ข้อสรุปทางสถาปัตยกรรม:** สำหรับ `Game/` จริงหลัง `T002`/`T003` ใช้ **AutoLOD = `CulledNodePool` เมื่อซูมใกล้/จำนวนในจอน้อย (`<= 250`) และ `MultiMeshBulkBuffer` เมื่อซูมไกล/ฝูงชนหนาแน่น** + **Chunked Terrain `16×16` culling**
 
 ### 1.4 ขอบเขตที่ Antigravity ปฏิบัติตามอย่างเคร่งครัด
 - ไม่แก้ไฟล์ใน `T001-review/`, ไม่สร้าง Simulation Engine/Save-Load/AI Decision ซ้ำ, และไม่เชื่อม `ISimulation` จนกว่า `Codex` จะสร้าง `Simulation.csproj` (`T002`/`T003`) ตามสัญญาที่อนุมัติแล้ว

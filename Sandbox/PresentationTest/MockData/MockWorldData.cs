@@ -184,12 +184,12 @@ public static class MockWorldFixture
             new(MockPropKind.GuardPost, new Vector2(45 * TileSize, 26 * TileSize)),
             new(MockPropKind.CropRipe, new Vector2(28 * TileSize, 34 * TileSize)),
             new(MockPropKind.CropGrowing, new Vector2(31 * TileSize, 34 * TileSize)),
-            new(MockPropKind.BerryBushRipe, new Vector2(54 * TileSize, 26 * TileSize)),
-            new(MockPropKind.BerryBushEmpty, new Vector2(57 * TileSize, 27 * TileSize)),
-            new(MockPropKind.ManaHerb, new Vector2(60 * TileSize, 24 * TileSize)),
-            new(MockPropKind.OakTree, new Vector2(56 * TileSize, 34 * TileSize)),
-            new(MockPropKind.PineTree, new Vector2(22 * TileSize, 14 * TileSize)),
-            new(MockPropKind.DeadStump, new Vector2(62 * TileSize, 36 * TileSize))
+            new(MockPropKind.BerryBushRipe, new Vector2(42 * TileSize, 24 * TileSize)),
+            new(MockPropKind.BerryBushEmpty, new Vector2(44 * TileSize, 24 * TileSize)),
+            new(MockPropKind.ManaHerb, new Vector2(46 * TileSize, 24 * TileSize)),
+            new(MockPropKind.OakTree, new Vector2(40 * TileSize, 21 * TileSize)),
+            new(MockPropKind.PineTree, new Vector2(43 * TileSize, 21 * TileSize)),
+            new(MockPropKind.DeadStump, new Vector2(46 * TileSize, 21 * TileSize))
         };
 
         // Add decorative forest scatter for zoom/culling preview.
@@ -218,9 +218,9 @@ public static class MockWorldFixture
             new(103, "Zarak", MockSpeciesKind.Demon, MockProfession.Mage, MockLifeState.Alive, new Vector2(40 * TileSize, 29 * TileSize), 0x7731D4u, "Study Tome (Mock)"),
             new(104, "Alden (Fallen)", MockSpeciesKind.Human, MockProfession.Villager, MockLifeState.Dead, new Vector2(46 * TileSize, 31 * TileSize), 0x5512C0u, "Dead (Mock)"),
             new(105, "Woolly", MockSpeciesKind.Sheep, MockProfession.Villager, MockLifeState.Alive, new Vector2(30 * TileSize, 32 * TileSize), 0x01u, "Graze (Mock)"),
-            new(106, "Forest Stag", MockSpeciesKind.Deer, MockProfession.Villager, MockLifeState.Alive, new Vector2(53 * TileSize, 30 * TileSize), 0x02u, "Forage (Mock)"),
-            new(107, "Ashfang", MockSpeciesKind.Wolf, MockProfession.Villager, MockLifeState.Alive, new Vector2(59 * TileSize, 33 * TileSize), 0x03u, "Stalk (Mock)"),
-            new(108, "Ignis Rex", MockSpeciesKind.TrueDragon, MockProfession.Villager, MockLifeState.Alive, new Vector2(66 * TileSize, 24 * TileSize), 0x04u, "Perch (Mock)")
+            new(106, "Forest Stag", MockSpeciesKind.Deer, MockProfession.Villager, MockLifeState.Alive, new Vector2(40 * TileSize, 30 * TileSize), 0x02u, "Forage (Mock)"),
+            new(107, "Ashfang", MockSpeciesKind.Wolf, MockProfession.Villager, MockLifeState.Alive, new Vector2(39 * TileSize, 31 * TileSize), 0x03u, "Stalk (Mock)"),
+            new(108, "Ignis Rex", MockSpeciesKind.TrueDragon, MockProfession.Villager, MockLifeState.Alive, new Vector2(36 * TileSize, 35 * TileSize), 0x04u, "Perch (Mock)")
         };
 
         for (int i = list.Count; i < targetCount; i++)
@@ -362,6 +362,30 @@ public static class MockWorldFixture
         }
 
         return new MockEventGapRecoveryResult(gapStart, gapEnd, oldestAvailable - 1, recovered, unknownCount);
+    }
+
+    public static Image BuildMinimapImage(MockTileKind[,] grid)
+    {
+        var img = Image.CreateEmpty(MapTilesX, MapTilesY, false, Image.Format.Rgba8);
+        for (int y = 0; y < MapTilesY; y++)
+        {
+            for (int x = 0; x < MapTilesX; x++)
+            {
+                Color col = grid[x, y] switch
+                {
+                    MockTileKind.Dirt => new Color(0.54f, 0.38f, 0.24f),
+                    MockTileKind.ShallowWater => new Color(0.25f, 0.64f, 0.82f),
+                    MockTileKind.DeepWater => new Color(0.13f, 0.34f, 0.60f),
+                    MockTileKind.ForestFloor => new Color(0.19f, 0.38f, 0.20f),
+                    MockTileKind.Mountain => new Color(0.45f, 0.47f, 0.52f),
+                    MockTileKind.Snow => new Color(0.91f, 0.94f, 0.97f),
+                    MockTileKind.Farmland => new Color(0.42f, 0.29f, 0.17f),
+                    _ => new Color(0.30f, 0.58f, 0.26f)
+                };
+                img.SetPixel(x, y, col);
+            }
+        }
+        return img;
     }
 
     private static uint Hash(uint x)

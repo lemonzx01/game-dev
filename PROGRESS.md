@@ -8,13 +8,16 @@
 
 ## Handoff log
 
-**2026-11-24 | Google Antigravity | Prep + N3 (pre-T007) | prep/N3-presentation-contract-sync (synced with 9648887) | BLOCKED (T007 waiting on T002/T003)**
+**2026-11-24 | Google Antigravity | Prep + N3 + Prototype Presentation Sandbox | prep/N3-presentation-contract-sync | BLOCKED (T007 waiting on T002/T003)**
 
 - รับ commit `9648887` (`T001 DONE`, `global.json` pinned SDK `10.0.404`) มายัง branch `prep/N3-presentation-contract-sync` โดยไม่แตะต้อง `T001-review/` และ `main`
 - **N3 เสร็จสมบูรณ์:** ปรับปรุง [docs/PRESENTATION_PLAN.md](docs/PRESENTATION_PLAN.md) ให้ตรงกับ `A007 revision 2` (แยก `ReadSnapshot()` <= 1/frame ออกจาก `ReadEvents(afterSequence, limit)`, ออกแบบ `EventGapRecovery`, `OutcomeUnknown` receipts, `ReadHistory` catch-up, reset cursors on load)
-- **เตรียม Asset ชั่วคราว (`CC0 1.0 / Project-owned`):** 6 placeholder PNG atlases ใน `Assets/Placeholders/` + ทะเบียนแหล่งที่มาใน `Assets/CREDITS.md`
+- **เตรียม Asset ชั่วคราว (`CC0 1.0 / Project-owned`):** 6 placeholder PNG atlases ใน `Assets/Placeholders/` (Terrain, Modular Human/Demon, Animals + True Dragon `64×64` + Buildings, Plants/Flora, UI Icons, Combat/Magic/Weather VFX) + ทะเบียนแหล่งที่มาใน `Assets/CREDITS.md`
 - **พื้นที่ทดสอบแยก (`Sandbox/PresentationTest/` — Mock Data เท่านั้น, ไม่เชื่อม `ISimulation`):**
-  - คอมไพล์ `PresentationTest.csproj` (`net8.0`, `Godot.NET.Sdk/4.7.2`) ด้วย System `.NET SDK 10.0.404` (pinned โดย `global.json`) และทดสอบด้วย `godot-mono.exe 4.7.2.stable.mono.official.ed1daf0bf`
+  - เพิ่ม `ChunkedTerrainPreview` (`16×16` chunks = `64` chunks, frustum culling, dirty rebuild `+1`, `CanvasModulate` ฤดูกาล/กลางคืน), Minimap `128×128` คลิกเลื่อนกล้อง + viewport box, Overlays (`Population`/`Threat`), `+1 Step`, `Backlog` badge, `WorldSelectionRing`, 2-frame walk/breath animation และ `Test Gap UI`
+  - คอมไพล์ `PresentationTest.csproj` (`net8.0`, `Godot.NET.Sdk/4.7.2`) ด้วย System `dotnet 10.0.404` (`global.json`) `-c Release` ผ่าน `0 Warning(s), 0 Error(s)` และรัน `godot-mono.exe --headless --path Sandbox/PresentationTest -- --run-sandbox-tests` → **`[SANDBOX_TESTS_PASSED]`**
+- **งานที่ยัง BLOCKED:** `T007` (Production `Game/` bridge กับ `ISimulation`) ยัง `BLOCKED` จนกว่า `Codex` จะสร้าง `Simulation/Simulation.csproj` (`T002`/`T003`)
+- **Exact next step:** รอ `Codex` ดำเนินการ `T002` และ `T003` จากนั้น merge/sync branch แล้วเริ่ม `T007` บน `feat/T007-godot-presentation`
 
 **2026-11-24 | Codex | T001 DONE | feat/T001-simulation-contract | base 58c398e**
 

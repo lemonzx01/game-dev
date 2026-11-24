@@ -32,16 +32,25 @@ public partial class SandboxHud : CanvasLayer
     public event Action<int>? FollowEntityRequested;
     public event Action<Vector2, int?>? FocusEventRequested;
     public event Action<bool, float>? PreviewPlaybackChanged;
+    public event Action? StepOnceRequested;
+    public event Action<MockSeasonVisual>? SeasonChanged;
+    public event Action<MockOverlayMode>? OverlayChanged;
+    public event Action<Vector2>? MinimapPanRequested;
 
     private Label _statusLabel = null!;
     private Label _metricsLabel = null!;
     private Label _gapBannerLabel = null!;
+    private Label _minimapInfoLabel = null!;
+    private TextureRect _minimapRect = null!;
+    private ReferenceRect _minimapViewportBox = null!;
     private VBoxContainer _inspectorContent = null!;
     private VBoxContainer _eventList = null!;
     private HBoxContainer _observerBar = null!;
     private HBoxContainer _godBar = null!;
     private Button _observerBtn = null!;
     private Button _godBtn = null!;
+    private bool _backlogPreviewActive;
+    private MockSeasonVisual _currentSeason = MockSeasonVisual.Spring;
 
     public SandboxUiMode CurrentMode { get; private set; } = SandboxUiMode.Observer;
     public MockGodBrush ActiveBrush { get; private set; } = MockGodBrush.SpawnHuman;
@@ -54,13 +63,14 @@ public partial class SandboxHud : CanvasLayer
     private List<MockEventItem> _events = new();
     private Dictionary<int, MockNpcDetail> _details = new();
 
-    public void BuildUi(List<MockEventItem> initialEvents, Dictionary<int, MockNpcDetail> details)
+    public void BuildUi(List<MockEventItem> initialEvents, Dictionary<int, MockNpcDetail> details, Texture2D minimapTex)
     {
         _events = initialEvents;
         _details = details;
 
         BuildTopBar();
         BuildEventFeedPanel();
+        BuildMinimapPanel(minimapTex);
         BuildInspectorPanel();
         BuildBottomContextBar();
 
@@ -68,11 +78,25 @@ public partial class SandboxHud : CanvasLayer
         RefreshEvents();
     }
 
-    public void UpdateMetrics(RenderBenchmarkMetrics metrics, float fps, float zoom, Vector2 camPos)
+    public void UpdateMetrics(RenderBenchmarkMetrics metrics, float fps, float zoom, Vector2 camPos, int visChunks, int totalChunks, Rect2 visibleRect)
     {
+        string backlogTag = _backlogPreviewActive ? " [BACKLOG DEMO]" : "";
         _metricsLabel.Text =
-            $"FPS: {fps:0.0} | Mode: {metrics.ActiveStrategy} | Visible: {metrics.VisibleEntities}/{metrics.TotalEntities} | " +
-            $"Active Sprite Nodes: {metrics.ActiveSpriteNodes} | Update: {metrics.UpdateMs:0.00} ms | Zoom: {zoom:0.00}x | Cam: ({camPos.X:0},{camPos.Y:0})";
+            $"FPS: {fps:0.0}{backlogTag} | LOD: {metrics.ActiveStrategy} | Visible: {metrics.VisibleEntities}/{metrics.TotalEntities} | " +
+            $"SpriteNodes: {metrics.ActiveSpriteNodes} | Chunks: {visChunks}/{totalChunks} | Upd: {metrics.UpdateMs:0.00} ms | Zoom: {zoom:0.00}x";
+
+        if (_minimapRect != null && _minimapViewportBox != null)
+        {
+            float mapWorld = MockWorldFixture.MapTilesX * MockWorldFixture.TileSize;
+            float scale = 128f / mapWorld;
+            _minimapViewportBox.Position = new Vector2(
+                Mathf.Clamp(visibleRect.Position.X * scale, 0f, 124f),
+                Mathf.Clamp(visibleRect.Position.Y * scale, 0f, 124f));
+            _minimapViewportBox.Size = new Vector2(
+                Mathf.Clamp(visibleRect.Size.X * scale, 6f, 128f),
+                Mathf.Clamp(visibleRect.Size.Y * scale, 6f, 128f));
+            _minimapInfoLabel.Text = $"Season: {_currentSeason} | Cam ({camPos.X:0},{camPos.Y:0})";
+        }
     }
 
     public void SelectNpc(int entityId)
@@ -138,32 +162,67 @@ public partial class SandboxHud : CanvasLayer
         AddSpeedButton(row1, "1x", false, 1f);
         AddSpeedButton(row1, "2x", false, 2f);
         AddSpeedButton(row1, "4x", false, 4f);
+        var stepBtn = new Button { Text = "+1 Step" };
+        stepBtn.Pressed += () =>
+        {
+            IsPaused = true;
+            SpeedScale = 0f;
+            PreviewPlaybackChanged?.Invoke(true, 0f);
+            StepOnceRequested?.Invoke();
+        };
+        row1.AddChild(stepBtn);
 
         row1.AddChild(new VSeparator());
 
-        _observerBtn = new Button { Text = "Observer Mode", ToggleMode = true, ButtonPressed = true };
+        _observerBtn = new Button { Text = "Observer", ToggleMode = true, ButtonPressed = true };
         _observerBtn.Pressed += () => SetUiMode(SandboxUiMode.Observer);
         row1.AddChild(_observerBtn);
 
-        _godBtn = new Button { Text = "God Mode (Mock)", ToggleMode = true, ButtonPressed = false };
+        _godBtn = new Button { Text = "God (Mock)", ToggleMode = true, ButtonPressed = false };
         _godBtn.Pressed += () => SetUiMode(SandboxUiMode.God);
         row1.AddChild(_godBtn);
+
+        row1.AddChild(new VSeparator());
+        foreach (MockSeasonVisual s in Enum.GetValues<MockSeasonVisual>())
+        {
+            var sb = new Button { Text = s.ToString() };
+            MockSeasonVisual captured = s;
+            sb.Pressed += () =>
+            {
+                _currentSeason = captured;
+                SeasonChanged?.Invoke(captured);
+            };
+            row1.AddChild(sb);
+        }
 
         var row2 = new HBoxContainer();
         outer.AddChild(row2);
 
-        row2.AddChild(new Label { Text = "Render LOD: " });
+        row2.AddChild(new Label { Text = "LOD: " });
         AddStrategyButton(row2, "AutoLOD", RenderOptimizationMode.AutoLod);
         AddStrategyButton(row2, "BulkBatch", RenderOptimizationMode.MultiMeshBulkBuffer);
-        AddStrategyButton(row2, "MultiMesh", RenderOptimizationMode.MultiMeshBatch);
         AddStrategyButton(row2, "CulledPool", RenderOptimizationMode.CulledNodePool);
-        AddStrategyButton(row2, "NaiveNodes", RenderOptimizationMode.NaiveNodes);
+        AddStrategyButton(row2, "Naive", RenderOptimizationMode.NaiveNodes);
 
         row2.AddChild(new VSeparator());
-        row2.AddChild(new Label { Text = "Mock Count: " });
+        row2.AddChild(new Label { Text = "N: " });
         AddCountButton(row2, "100", 100);
         AddCountButton(row2, "1k", 1000);
         AddCountButton(row2, "5k", 5000);
+
+        row2.AddChild(new VSeparator());
+        row2.AddChild(new Label { Text = "Overlay: " });
+        foreach (MockOverlayMode ov in Enum.GetValues<MockOverlayMode>())
+        {
+            var ob = new Button { Text = ov.ToString() };
+            MockOverlayMode captured = ov;
+            ob.Pressed += () => OverlayChanged?.Invoke(captured);
+            row2.AddChild(ob);
+        }
+
+        var backlogBtn = new Button { Text = "Backlog", ToggleMode = true };
+        backlogBtn.Pressed += () => _backlogPreviewActive = backlogBtn.ButtonPressed;
+        row2.AddChild(backlogBtn);
 
         _metricsLabel = new Label { Text = "Initializing metrics..." };
         outer.AddChild(_metricsLabel);
@@ -174,7 +233,7 @@ public partial class SandboxHud : CanvasLayer
         var panel = new PanelContainer
         {
             AnchorLeft = 0f, AnchorRight = 0f, AnchorTop = 0f, AnchorBottom = 1f,
-            OffsetLeft = 8f, OffsetTop = 102f, OffsetRight = 320f, OffsetBottom = -64f
+            OffsetLeft = 8f, OffsetTop = 102f, OffsetRight = 320f, OffsetBottom = -224f
         };
         AddChild(panel);
 
@@ -214,6 +273,59 @@ public partial class SandboxHud : CanvasLayer
 
         _eventList = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         scroll.AddChild(_eventList);
+    }
+
+    private void BuildMinimapPanel(Texture2D minimapTex)
+    {
+        var panel = new PanelContainer
+        {
+            AnchorLeft = 0f, AnchorRight = 0f, AnchorTop = 1f, AnchorBottom = 1f,
+            OffsetLeft = 8f, OffsetTop = -218f, OffsetRight = 320f, OffsetBottom = -60f
+        };
+        AddChild(panel);
+
+        var row = new HBoxContainer();
+        panel.AddChild(row);
+
+        _minimapRect = new TextureRect
+        {
+            Texture = minimapTex,
+            CustomMinimumSize = new Vector2(128, 128),
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+            StretchMode = TextureRect.StretchModeEnum.KeepAspect,
+            TextureFilter = CanvasItem.TextureFilterEnum.Nearest
+        };
+        _minimapRect.GuiInput += @event =>
+        {
+            if (@event is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left)
+            {
+                float worldSize = MockWorldFixture.MapTilesX * MockWorldFixture.TileSize;
+                Vector2 target = new Vector2(
+                    Mathf.Clamp(mb.Position.X / 128f, 0f, 1f) * worldSize,
+                    Mathf.Clamp(mb.Position.Y / 128f, 0f, 1f) * worldSize);
+                MinimapPanRequested?.Invoke(target);
+            }
+        };
+        row.AddChild(_minimapRect);
+
+        _minimapViewportBox = new ReferenceRect
+        {
+            BorderColor = Colors.White,
+            BorderWidth = 1.5f,
+            EditorOnly = false,
+            MouseFilter = Control.MouseFilterEnum.Ignore
+        };
+        _minimapRect.AddChild(_minimapViewportBox);
+
+        var infoCol = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        row.AddChild(infoCol);
+        infoCol.AddChild(new Label { Text = "Minimap (Click)" });
+        _minimapInfoLabel = new Label
+        {
+            Text = "Season: Spring",
+            AutowrapMode = TextServer.AutowrapMode.Word
+        };
+        infoCol.AddChild(_minimapInfoLabel);
     }
 
     private void BuildInspectorPanel()

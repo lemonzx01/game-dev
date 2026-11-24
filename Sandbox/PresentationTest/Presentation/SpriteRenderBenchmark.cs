@@ -243,8 +243,9 @@ public partial class SpriteRenderBenchmark : Node2D
                 Color tint = e.LifeState == MockLifeState.Dead
                     ? new Color(0.55f, 0.55f, 0.6f)
                     : (e.Species == MockSpeciesKind.Demon ? new Color(0.92f, 0.42f, 0.44f) : new Color(0.95f, 0.85f, 0.75f));
-                float uvX = e.LifeState == MockLifeState.Dead ? (96f / 256f) : (32f / 256f);
-                float uvY = e.LifeState == MockLifeState.Dead ? (32f / 64f) : 0f;
+                bool stepPose = e.IsOrbitPreview && !orbitPaused && ((((int)(elapsedSec * speedScale * 4f) + e.Id) & 1) == 1);
+                float uvX = e.LifeState == MockLifeState.Dead ? (96f / 256f) : (stepPose ? 0f : (32f / 256f));
+                float uvY = e.LifeState == MockLifeState.Dead || stepPose ? (32f / 64f) : 0f;
                 WriteBulkInstance(_humanoidBulkBuf, hCount, 1f, pos, tint, uvX, uvY, 32f / 256f, 32f / 64f);
                 hCount++;
             }
@@ -252,12 +253,13 @@ public partial class SpriteRenderBenchmark : Node2D
             {
                 if (cCount >= cMesh.InstanceCount) continue;
                 float scale = e.Species == MockSpeciesKind.TrueDragon ? 2.0f : 1.0f;
+                bool dragonBreath = e.Species == MockSpeciesKind.TrueDragon && !orbitPaused && (((int)(elapsedSec * 2f)) % 4 == 0);
                 (float uvX, float uvW, float uvH) = e.Species switch
                 {
                     MockSpeciesKind.Sheep => (0f, 32f / 256f, 32f / 64f),
                     MockSpeciesKind.Deer => (32f / 256f, 32f / 256f, 32f / 64f),
                     MockSpeciesKind.Wolf => (64f / 256f, 32f / 256f, 32f / 64f),
-                    _ => (128f / 256f, 64f / 256f, 64f / 64f)
+                    _ => (dragonBreath ? (192f / 256f) : (128f / 256f), 64f / 256f, 64f / 64f)
                 };
                 WriteBulkInstance(_creatureBulkBuf, cCount, scale, pos, Colors.White, uvX, 0f, uvW, uvH);
                 cCount++;
@@ -291,7 +293,9 @@ public partial class SpriteRenderBenchmark : Node2D
             var sprite = _actorPool[i];
             sprite.Visible = true;
             sprite.Position = ResolvePreviewPos(e, elapsedSec, orbitPaused, speedScale);
-            ConfigureSpriteVisual(sprite, e);
+            bool stepPose = e.IsOrbitPreview && !orbitPaused && ((((int)(elapsedSec * speedScale * 4f) + e.Id) & 1) == 1);
+            bool dragonBreath = e.Species == MockSpeciesKind.TrueDragon && !orbitPaused && (((int)(elapsedSec * 2f)) % 4 == 0);
+            ConfigureSpriteVisual(sprite, e, stepPose, dragonBreath);
         }
 
         for (int i = used; i < _actorPool.Count; i++)
@@ -330,14 +334,14 @@ public partial class SpriteRenderBenchmark : Node2D
         return _naiveNodes.Count;
     }
 
-    private void ConfigureSpriteVisual(Sprite2D sprite, MockEntityVisual e)
+    private void ConfigureSpriteVisual(Sprite2D sprite, MockEntityVisual e, bool stepPose = false, bool dragonBreath = false)
     {
         if (e.Species is MockSpeciesKind.Human or MockSpeciesKind.Demon)
         {
             sprite.Texture = _humanoidAtlas;
             sprite.RegionRect = e.LifeState == MockLifeState.Dead
                 ? new Rect2(96, 32, 32, 32)
-                : new Rect2(32, 0, 32, 32);
+                : (stepPose ? new Rect2(0, 32, 32, 32) : new Rect2(32, 0, 32, 32));
             sprite.Modulate = e.LifeState == MockLifeState.Dead
                 ? new Color(0.6f, 0.6f, 0.65f)
                 : (e.Species == MockSpeciesKind.Demon ? new Color(0.92f, 0.42f, 0.44f) : new Color(0.95f, 0.85f, 0.75f));
@@ -351,7 +355,7 @@ public partial class SpriteRenderBenchmark : Node2D
                 MockSpeciesKind.Sheep => new Rect2(0, 0, 32, 32),
                 MockSpeciesKind.Deer => new Rect2(32, 0, 32, 32),
                 MockSpeciesKind.Wolf => new Rect2(64, 0, 32, 32),
-                _ => new Rect2(128, 0, 64, 64)
+                _ => new Rect2(dragonBreath ? 192 : 128, 0, 64, 64)
             };
         }
     }
