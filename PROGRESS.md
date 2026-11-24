@@ -6,6 +6,10 @@ T001–T014 DONE and merged to main (2026-11-24; T003–T014 merged by owner ins
 
 ## Handoff log
 
+**2026-11-25 | Claude Code | Integrated Codex review of T015–T017 | main | merged (doc only)**
+
+- docs/reviews/2026-11-codex-review-T015-T017.md: 12 findings (2 High, 9 Medium, 1 Low). Fixes handed to Antigravity as FIX-R1 (docs/prompts/antigravity-review-fixes.md; Simulation/** + Tests/** only) while Claude Code does T019 visuals in Game/**.
+
 **2026-11-25 | Claude Code | Integrated T018-env (Codex) | main | merged after review**
 
 - Codex's environment art (independent local checkout, could not reach the shared repo) fetched, reviewed (renderer diff limited to environment parts, generator script read) and merged on top of T019. Merged main: 89/89 tests, T007/T008/GodTools/Settlement acceptances pass, in-game frame checked.
