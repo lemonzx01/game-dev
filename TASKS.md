@@ -2,31 +2,31 @@
 
 T001 is DONE. A007 revision 2 is Accepted. See PROGRESS.md for verified toolchain and build evidence.
 
-| ID | Priority | Default owner | Task | Depends | Acceptance (summary) | Status |
-|---|---|---|---|---|---|---|
-| T001 | Must | Codex + Claude review | Verify toolchain, solution layout, agree contracts | — | actual version/build commands, contract signatures recorded, no Godot reference in Simulation | DONE |
-| T002 | Must | Codex | Headless runner, test project, seeded RNG, IDs | T001 | build + same seed produces same baseline output; all 9 T002 acceptance tests below | DONE |
-| T003 | Must | Codex | World clock, grid map, resources, commands, tick scheduler | T002 | deterministic map, pause/step, invalid commands rejected; N1 + N4 below | TODO |
-| T004 | Must | Codex | Entity state, needs, health, death | T003 | food/water consumption, elapsed time, no dead actions, no negative stock | TODO |
-| T005 | Must | Codex | Utility AI and action lifecycle | T004 | hunger selects reachable food, rest and flee feasible, interrupt, no rapid oscillation | TODO |
-| T006 | Must | Codex | Spatial grid and bounded movement/pathfinding | T003,T005 | nearby results correct, blocked path handled, request budget enforced | TODO |
-| T007 | Must | Antigravity | Godot project, map renderer, camera, simulation bridge | T001; N3; integrate T003 | actual snapshots displayed, camera/input independent of state, placeholders allowed; events via ReadEvents cursor (N3) | TODO |
-| T008 | Must | Antigravity | Observer UI, pause/speed, selection, follow, event feed | T005,T007 | inspect and follow any living entity; tracking doesn't affect sim; dead history retained | TODO |
-| T009 | Must | Codex | Species data + predator/prey + resources | T004–T006 | 3–5 species including farm/wild animal and predator, kills consume/transfer real resources | TODO |
-| T010 | Must | Codex | Basic personality/emotions/memory | T005,T009 | two personalities can choose differently under defined inputs; danger event changes emotion; verify per-entity memory/relationship caps, eviction and durable history (Architecture §9) | TODO |
-| T011 | Must | Codex | Basic birth and ageing/death | T009 | new ID, valid parents/age, capped reproduction/resource checks | TODO |
-| T012 | Should | Codex + Antigravity UI | Seasons, temperature and resource growth | T003,T009 | predictable season progression; seasonal growth differs; UI reports season | TODO |
-| T013 | Must | Codex | Versioned save/load | T003 onward | state, pending action, RNG and time roundtrip; malformed save rejected; replay continuation test; N2 below | TODO |
-| T014 | Must | Codex + Claude review | Profiling, correctness, optimization | T006–T013 (applicable) | measured scenarios 100+ entities; attempt 1,000 if stable; document bottlenecks and no regressions | TODO |
-| T015 | Should | Codex + Antigravity | Two settlements, humans/demons, farm/storage/jobs | T009,T010 | stock conservation, production/consumption and display; no inherent good/evil rule | TODO |
-| T016 | Should | Codex + Antigravity | Basic trade and guards | T015 | seller loses stock and receives payment, buyer inverse; guard responds to threat | TODO |
-| T017 | Should | Codex | Skills and reading | T005,T010 | gains from activities; interrupted read awards actual progress, no duplicate XP | TODO |
-| T018 | Must | Antigravity + Codex + owner | Playtest, bugfix, export build and docs | all completed Musts | Windows build if toolchain supports it, 15–30 minute observer trial, known bugs and verified commands | TODO |
-| T019 | Stretch | Codex + Antigravity | Simple combat, magic, dragon, tame | T009,T010,T014 | separate small tasks; costs and valid targets; one dragon species/tame trust if time | TODO |
-| T020 | Stretch | Antigravity + Codex | Possession movement/interact | T008,T014 | take/release control, same ID/state, AI resumes, other agents continue | TODO |
+| ID | Priority | Task | Depends | Acceptance (summary) | Status |
+|---|---|---|---|---|---|
+| T001 | Must | Verify toolchain, solution layout, agree contracts | — | actual version/build commands, contract signatures recorded, no Godot reference in Simulation | DONE |
+| T002 | Must | Headless runner, test project, seeded RNG, IDs | T001 | build + same seed produces same baseline output; all 9 T002 acceptance tests below | DONE |
+| T003 | Must | World clock, grid map, resources, commands, tick scheduler | T002 | deterministic map, pause/step, invalid commands rejected; N1 + N4 below | TODO |
+| T004 | Must | Entity state, needs, health, death | T003 | food/water consumption, elapsed time, no dead actions, no negative stock | TODO |
+| T005 | Must | Utility AI and action lifecycle | T004 | hunger selects reachable food, rest and flee feasible, interrupt, no rapid oscillation | TODO |
+| T006 | Must | Spatial grid and bounded movement/pathfinding | T003,T005 | nearby results correct, blocked path handled, request budget enforced | TODO |
+| T007 | Must | Godot project, map renderer, camera, simulation bridge | T001; N3; integrate T003 | actual snapshots displayed, camera/input independent of state, placeholders allowed; events via ReadEvents cursor (N3) | TODO |
+| T008 | Must | Observer UI, pause/speed, selection, follow, event feed | T005,T007 | inspect and follow any living entity; tracking doesn't affect sim; dead history retained | TODO |
+| T009 | Must | Species data + predator/prey + resources | T004–T006 | 3–5 species including farm/wild animal and predator, kills consume/transfer real resources | TODO |
+| T010 | Must | Basic personality/emotions/memory | T005,T009 | two personalities can choose differently under defined inputs; danger event changes emotion; verify per-entity memory/relationship caps, eviction and durable history (Architecture §9) | TODO |
+| T011 | Must | Basic birth and ageing/death | T009 | new ID, valid parents/age, capped reproduction/resource checks | TODO |
+| T012 | Should | Seasons, temperature and resource growth | T003,T009 | predictable season progression; seasonal growth differs; UI reports season | TODO |
+| T013 | Must | Versioned save/load | T003 onward | state, pending action, RNG and time roundtrip; malformed save rejected; replay continuation test; N2 below | TODO |
+| T014 | Must | Profiling, correctness, optimization | T006–T013 (applicable) | measured scenarios 100+ entities; attempt 1,000 if stable; document bottlenecks and no regressions; independent review (not the author) | TODO |
+| T015 | Should | Two settlements, humans/demons, farm/storage/jobs | T009,T010 | stock conservation, production/consumption and display; no inherent good/evil rule | TODO |
+| T016 | Should | Basic trade and guards | T015 | seller loses stock and receives payment, buyer inverse; guard responds to threat | TODO |
+| T017 | Should | Skills and reading | T005,T010 | gains from activities; interrupted read awards actual progress, no duplicate XP | TODO |
+| T018 | Must | Playtest, bugfix, export build and docs | all completed Musts | Windows build if toolchain supports it, 15–30 minute observer trial, known bugs and verified commands | TODO |
+| T019 | Stretch | Simple combat, magic, dragon, tame | T009,T010,T014 | separate small tasks; costs and valid targets; one dragon species/tame trust if time | TODO |
+| T020 | Stretch | Possession movement/interact | T008,T014 | take/release control, same ID/state, AI resumes, other agents continue | TODO |
 
-## First assignments
-Codex starts T001; Claude performs focused review after Codex proposes contracts. Antigravity can prepare placeholder assets and UI sketch without changing core contracts, then implement T007 after T001. Once interface is frozen, work in parallel on separate branches/worktrees. If quotas are low, do T001–T009 first and reduce optional scope.
+## How tasks are picked
+No task is tied to a particular AI. Any agent picks the next task whose dependencies are met and that nobody has claimed (AGENTS.md Workflow 1–2), on its own branch/worktree. Tasks whose acceptance says "independent review" (T014, contract/architecture changes) need a reviewer other than the author. If quotas are low, do T001–T009 first and reduce optional scope.
 
 ## Requirements carried from T001 review (A007 rev 2, Accepted 2026-11-24)
 Full rationale in PROGRESS.md (Claude Code T001 Re-Review). For current T002 evidence see PROGRESS.md. Later task requirements remain assigned below.
@@ -49,5 +49,5 @@ Full rationale in PROGRESS.md (Claude Code T001 Re-Review). For current T002 evi
 **T013:**
 - N2 — History archive must be bound to the save timeline: on load ignore/truncate records with EventSequence ≥ checkpoint NextEventSequence; write the archive only at save boundaries (no file I/O inside Step). MVP may keep all death summaries inside the checkpoint. Test: save A → X dies → save B → load A → ReadHistory/ReadEntityDetails show no death of X.
 
-**Antigravity, before T007:**
+**Before T007:**
 - N3 — Update docs/PRESENTATION_PLAN.md (parent checkout, lines ~73 and ~85): drain `ReadEvents(cursor, limit)` per frame and handle Gap instead of reading events from `ReadSnapshot()` after every Step; request at most one snapshot per frame.

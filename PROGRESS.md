@@ -2,9 +2,15 @@
 
 ## Current state
 
-T001 DONE. A007 revision 2 Accepted. T002 DONE (Release build + 7/7 runtime acceptance test groups passed on Windows Host). Ready for T003+ parallel development.
+T001 DONE. A007 revision 2 Accepted. T002 DONE (Release build + 7/7 runtime acceptance test groups passed on Windows Host). A008 (2026-11-24): AI roles removed — all agents are equal developers; see AGENTS.md. T003 IN_PROGRESS (Claude Code, `feat/T003-world-clock`).
 
 ## Handoff log
+
+**2026-11-24 | Claude Code (owner-requested) | Process A008 | feat/T002-simulation-foundation | role removal**
+
+- ยกเลิกการแบ่งบทบาท AI ตามคำสั่งเจ้าของ: แก้ AGENTS.md, CLAUDE.md, ANTIGRAVITY.md, START_HERE.md, README.md, TASKS.md (ลบคอลัมน์ Default owner), ROADMAP.md, ARCHITECTURE.md §3 heading และเพิ่ม A008 ใน docs/DECISIONS.md รายการประวัติเดิมใน PROGRESS/DECISIONS ไม่แก้
+- ตรวจ agent-orchestrator: 4 session ใน `~/.local/share/agent-orchestrator/platform.sqlite3` อยู่ในสถานะ COMPLETED/STOPPED ไม่มี session ที่แจกงานอยู่ ลบ worktree/branch `orch/*` ที่ว่าง (ไม่มีไฟล์แก้และ commit อยู่ใน HEAD แล้ว) 7 ชุด: T002, T003, T004, T005, T006, T009, T010 เก็บ 4 ชุดที่มีงานยังไม่ commit ไว้: `orch/T007-claude-…` (Game/ project), `orch/SUB-T007-N3-…` (PRESENTATION_PLAN.md), `orch/SUB-T013-SCHEMA-…` (SAVE_SCHEMA_DRAFT.md), `orch/SUB-T006-MOCK-…` (MOCK_SCENARIOS.md)
+- หมายเหตุ: orchestrator DB บันทึก T003 เป็น DONE แต่ worktree ไม่มีไฟล์เปลี่ยนเลย ถือว่า T003 ยังไม่ได้ทำ
 
 **2026-11-24 | Antigravity (Coordinator) | T002 DONE | feat/T002-simulation-foundation | runtime verification**
 
