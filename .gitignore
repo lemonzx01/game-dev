@@ -1,4 +1,5 @@
 /T001-review/
+/.worktrees/
 bin/
 obj/
 .godot/

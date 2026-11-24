@@ -2,11 +2,20 @@
 
 ## Current state
 
-**T001 DONE · A007 revision 2 Accepted · `Codex` กำลังพัฒนา `T002` · N3 เสร็จแล้วบน `prep/N3-presentation-contract-sync` · `T007 = BLOCKED` (รอ `Simulation/Simulation.csproj` / `T003` จาก `Codex`)**
+**T001 DONE · A007 revision 2 Accepted · `T002` commit `48bb41f` รอตรวจ runtime verification ใน `T001-review/` · Multi-agent coordination (`docs/MULTI_AGENT_WORKFLOW.md`, `scripts/agent-status.ps1`, `TASKS.md` Active Claims) พร้อมใช้งานแล้วบน `chore/multi-agent-workflow` · `T007 = BLOCKED` (รอ `T002`/`T003`)**
 
-ข้อกำหนดที่ยกไปจากรีวิว: N1+N4 → T003, N2 → T013, N3 → DONE (Antigravity presentation prep), acceptance tests 9 ข้อ → T002 (ดู TASKS.md "Requirements carried from T001 review")
+ข้อกำหนดที่ยกไปจากรีวิว: N1+N4 → T003, N2 → T013, N3 → DONE (Antigravity presentation prep), acceptance tests 9 ข้อ → T002 (รอ runtime test ใน terminal ปกติ)
 
 ## Handoff log
+
+**2026-11-24 | Google Antigravity | Multi-Agent Shared Workflow + Status Board | chore/multi-agent-workflow | REVIEW / READY TO MERGE**
+
+- ออกแบบและติดตั้งระบบทำงานร่วมกันแบบยืดหยุ่น (ไม่แบ่งหน้าที่ตายตัวตามชื่อแอป) ใน [docs/MULTI_AGENT_WORKFLOW.md](docs/MULTI_AGENT_WORKFLOW.md):
+  - ใช้ Git Repo เดียว + `git worktree` ใน `.worktrees/<TASK_ID>-<agent>` (`1 Task ID = 1 Branch = 1 Worktree = 1 Active Owner`)
+  - เพิ่มตาราง `## Active Claims` บนสุดของ `TASKS.md` + โฟลเดอร์ `docs/handoffs/<TASK_ID>.md` (แยกบันทึกส่งต่อราย Task เพื่อลด Merge Conflict บน `PROGRESS.md`)
+  - เพิ่มสคริปต์ read-only [scripts/agent-status.ps1](scripts/agent-status.ps1) สำหรับเช็คใน 1 วินาทีว่าแต่ละแอป/worktree กำลังทำ Task ใด, Branch ใด และมีไฟล์แก้ค้างกี่ไฟล์
+- อัปเดต [docs/handoffs/T007-prep.md](docs/handoffs/T007-prep.md) และ `.gitignore` (`/.worktrees/`)
+- **Exact next step:** เจ้าของตรวจและ merge `chore/multi-agent-workflow` + ช่วยตรวจรัน `T002` (`dotnet test Tests/Simulation.Tests -c Release -m:1` สำหรับ commit `48bb41f`) แล้วรวมเข้า `main` จากนั้นทุกแอปสามารถหยิบ `T003`, `T007` ฯลฯ ผ่าน `.worktrees/` ได้ทันที
 
 **2026-11-24 | Google Antigravity | Prep + N3 + Prototype Presentation Sandbox | prep/N3-presentation-contract-sync | BLOCKED (T007 waiting on T002/T003)**
 
