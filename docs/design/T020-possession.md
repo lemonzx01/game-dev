@@ -74,6 +74,6 @@ A rejected interaction costs nothing (same rule as T019).
 Dialogue/talk, inventory and items, click-to-move pathfinding, multiple players, possession limits or costs. Record these as follow-ups.
 
 ## 8. Questions for the owner (defaults used if unanswered)
-1. Can any living creature be possessed, including animals and the dragon? Default: **yes**.
+1. Can any living creature be possessed, including animals and the dragon? **Answered by the owner 2026-11-25: yes. Animals can be possessed, and playing as the dragon is wanted.** Possessed animals use only verbs their species supports (e.g. no Firebolt/Heal/Feed for animals; `Attack` uses species damage).
 2. Should possession need anything in-world (e.g. only God mode)? Default: **available in the observer game; God tools turn off while possessing**.
 3. Key layout above OK? Default: **yes**.
