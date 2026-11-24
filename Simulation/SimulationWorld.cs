@@ -115,6 +115,7 @@ public sealed partial class SimulationWorld : ISimulation
                 events.Append(new WorldEvent(0, next, EventKinds.EventsDropped, Amount: droppedThisTick));
             tick = next;
             snapshot = null;
+            settlementViews = null;
         }
         finally
         {

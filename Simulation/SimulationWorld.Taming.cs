@@ -76,7 +76,9 @@ public sealed partial class SimulationWorld
     private void Feed(EntityState feeder, EntityState animal, long now)
     {
         if (SettlementOf(feeder) is not { } town || town.Food <= TameCfg.FoodReserve) return; // nothing to spare: no cost, no feed
+        var before = BuyerSignature(town);
         town.Food--;
+        InvalidateSettlementEconomy(town, before);
         var sd = SpeciesOf(animal)!;
         if (animal.TamerId != feeder.Id.Value) { animal.TamerId = feeder.Id.Value; animal.Trust = 0; } // trust is personal
         int chance = Math.Clamp(TameCfg.BaseAcceptPercent - FearAt(animal, now) / 20 + feeder.Psyche.Sociability / 50, 5, 95);

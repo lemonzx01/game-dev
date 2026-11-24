@@ -19,6 +19,10 @@ internal static class FixR1Tests
         ("FIX-R1 #6 scholarship XP bonus rejects extreme tuning and saturates at long.MaxValue", ScholarshipBonusXpNoOverflow),
         ("FIX-R1 #7 invalid crop scheduler fixtures (missing plot, duplicate timer, missing timer) are rejected", CropSchedulerInvariantsOnLoad),
         ("FIX-R1 #8 settlement, trade, carry, reading save invariants and positive controls", SettlementTradeReadingInvariantsOnLoad),
+        ("FIX-R1 #9 partial trade sale reconciles both towns, payments, unsold return, and slot", PartialSaleReconcilesBothTownsAndCargo),
+        ("FIX-R1 #10 ReadSettlements caches one linear aggregation per tick and updates after promotion/death", ReadSettlementsLinearAggregationAndCache),
+        ("FIX-R1 #11 TradeDeal shares lookup per economic revision with nearest and ascending-ID tie-break", TradeDealCachedPerRevision),
+        ("FIX-R1 #12 founding excludes grass tiles beyond Manhattan distance 3", FoundingSkipsPlotsBeyondManhattan3),
     ];
 
     private static void Check(bool ok, string message)
@@ -657,5 +661,257 @@ internal static class FixR1Tests
         Check(readLoaded.StateHash() == readWorld.StateHash(), "positive control: mid-read checkpoint loads");
         for (int t = 0; t < 200; t++) { readWorld.Step(); readLoaded.Step(); }
         Check(readLoaded.StateHash() == readWorld.StateHash(), "positive control: mid-read continues identically");
+    }
+
+    // ---- Finding 9 ------------------------------------------------------------------------------
+
+    private static void PartialSaleReconcilesBothTownsAndCargo()
+    {
+        // Freeze unrelated production (no farm plots, no wild nodes) and consumption (zero hunger/thirst).
+        var rows = Enumerable.Range(0, 16).Select(y => y is 0 or 15 ? new string('^', 48) : "^" + new string('.', 46) + "^").ToList();
+        var world = new SimulationWorld(new SimulationOptions
+        {
+            WorldId = W,
+            Seed = 909,
+            MapWidth = 48,
+            MapHeight = 16,
+            Map = MapOverride.FromRows(rows),
+            Species = Default,
+            Vitals = new VitalsConfig(0, 0, 0, 0, 0, 250_000, 100_000, 4),
+            Mind = MindConfig.Default with { FatiguePerTick = 0 },
+            Settlements = SettlementConfig.Default with { FarmPlots = 0, WoodTarget = 0, FoodTarget = 60 },
+            Grants = ImmutableSortedDictionary<long, AuthorityGrant>.Empty.Add(God, AuthorityGrant.God),
+        });
+        world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 10, 8, Faction.Human, "West"));
+        world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 38, 8, Faction.Demon, "East"));
+        for (int k = 0; k < 3; k++)
+            world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 10, 8, Human));
+        world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 38, 8, Demon));
+        world.Step();
+        world.SetStorageForTest(1, food: 300, wood: 100, coins: 100);
+        world.SetStorageForTest(2, food: 0, wood: 100, coins: 100);
+        long cursor = world.ReadEvents(0, 1).LatestSequence;
+
+        // Wait for 8 units loaded into transit.
+        WorldEvent loadEvent = default;
+        var events = new List<WorldEvent>();
+        for (int t = 0; t < 150 && loadEvent.Kind != EventKinds.TradeLoaded; t++)
+        {
+            var batch = Run(world, 1, ref cursor);
+            events.AddRange(batch);
+            loadEvent = batch.FirstOrDefault(e => e.Kind == EventKinds.TradeLoaded);
+        }
+        Check(loadEvent.Kind == EventKinds.TradeLoaded && loadEvent.Amount == 8 && loadEvent.Reason == (int)ResourceKind.Food,
+            $"expected 8 Food loaded, got {loadEvent}");
+        Check(world.ReadSettlements()[0].Food == 292 && world.ReadSettlements()[0].TradersOut == 1, "seller debited and slot reserved on load");
+
+        // Reduce buyer coins in transit so only 3 units can sell; then run until trader returns home.
+        int unitPrice = TradeConfig.Default.FoodPrice;
+        world.SetStorageForTest(2, food: 0, wood: 100, coins: 3L * unitPrice);
+        bool slotReleased = false;
+        for (int t = 0; t < 400 && !slotReleased; t++)
+        {
+            var batch = Run(world, 1, ref cursor);
+            events.AddRange(batch);
+            if (batch.Any(e => e.Kind == EventKinds.TradeSold) && world.ReadSettlements()[0].TradersOut == 0)
+                slotReleased = true;
+            else if (events.Any(e => e.Kind == EventKinds.TradeSold) && world.ReadSettlements()[0].TradersOut == 0)
+                slotReleased = true;
+        }
+        Check(slotReleased, "trader returned home and released slot");
+
+        var sold = events.Where(e => e.Kind == EventKinds.TradeSold).ToList();
+        var paid = events.Where(e => e.Kind == EventKinds.TradePaid).ToList();
+        var deposits = events.Where(e => e.Kind == EventKinds.Deposited && e.Actor == loadEvent.Actor && e.Target == 1 && e.Reason == (int)ResourceKind.Food).ToList();
+        Check(sold.Count == 1 && paid.Count == 1, $"expected 1 sale and 1 payment, got sold={sold.Count}, paid={paid.Count}");
+        Check(sold[0].Amount == 3 && sold[0].Reason == (int)ResourceKind.Food, $"expected 3 sold, got {sold[0].Amount}");
+        Check(paid[0].Tick == sold[0].Tick && paid[0].Actor == 2 && paid[0].Target == 1 && paid[0].Amount == 3L * unitPrice,
+            $"expected payment {3L * unitPrice} from 2 to 1 on tick {sold[0].Tick}, got {paid[0]}");
+        Check(deposits.Sum(d => d.Amount) == 5, $"expected 5 unsold units returned, got {deposits.Sum(d => d.Amount)}");
+
+        var (west, east) = (world.ReadSettlements()[0], world.ReadSettlements()[1]);
+        Check(west.Food == 297 && east.Food == 3, $"exact food reconciliation expected west=297, east=3; got west={west.Food}, east={east.Food}");
+        Check(west.Coins == 100 + 3L * unitPrice && east.Coins == 0, $"exact coin exchange expected west={100 + 3L * unitPrice}, east=0; got west={west.Coins}, east={east.Coins}");
+        Check(west.TradersOut == 0, "trader slot released");
+    }
+
+    // ---- Finding 10 -----------------------------------------------------------------------------
+
+    private static void ReadSettlementsLinearAggregationAndCache()
+    {
+        // Verify counts after promotion and death, plus single O(entities) aggregation per completed tick across repeated reads.
+        foreach (var (towns, popPerTown) in new[] { (3, 8), (9, 10) })
+        {
+            int width = Math.Max(60, towns * 30);
+            var rows = Enumerable.Range(0, 20).Select(y => y is 0 or 19 ? new string('^', width) : "^" + new string('.', width - 2) + "^").ToList();
+            var world = new SimulationWorld(new SimulationOptions
+            {
+                WorldId = W,
+                Seed = (ulong)(1010 + towns),
+                MapWidth = width,
+                MapHeight = 20,
+                Map = MapOverride.FromRows(rows),
+                Species = Default,
+                Vitals = new VitalsConfig(0, 0, 0, 0, 0, 250_000, 100_000, 4),
+                Mind = MindConfig.Default with { FatiguePerTick = 0 },
+                Settlements = SettlementConfig.Default with { FarmPlots = 0, WoodTarget = 0, FoodTarget = 60 },
+                Grants = ImmutableSortedDictionary<long, AuthorityGrant>.Empty.Add(God, AuthorityGrant.God),
+            });
+            for (int i = 0; i < towns; i++)
+            {
+                int cx = 15 + i * 25;
+                world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, cx, 10, Faction.Human, $"Town{i}"));
+                for (int k = 0; k < popPerTown; k++)
+                    world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, cx, 10, Human));
+            }
+            for (int t = 0; t < 20; t++) world.Step(); // lets guards promote
+
+            int aggBefore = world.SettlementAggregationCount;
+            long scansBefore = world.SettlementAggregationEntityScans;
+            var r1 = world.ReadSettlements();
+            var r2 = world.ReadSettlements();
+            var r3 = world.ReadSettlements();
+            Check(ReferenceEquals(r1, r2) && ReferenceEquals(r2, r3), "repeated same-tick ReadSettlements must share immutable result");
+            Check(world.SettlementAggregationCount - aggBefore == 1,
+                $"expected 1 aggregation across 3 same-tick reads, got {world.SettlementAggregationCount - aggBefore}");
+            Check(world.SettlementAggregationEntityScans - scansBefore == towns * popPerTown,
+                $"expected 1 linear pass ({towns * popPerTown} entity scans), got {world.SettlementAggregationEntityScans - scansBefore}");
+            Check(r1.Count == towns && r1.All(s => s.Population == popPerTown && s.Guards == Math.Max(1, popPerTown / TradeConfig.Default.MembersPerGuard)),
+                "accurate population and guard counts after promotion");
+
+            // Kill the guard of town 1 and verify counts reflect death on the next tick.
+            long guard1 = world.ReadSnapshot().Chunks.SelectMany(c => c)
+                .First(r => world.ReadEntityDetails(W, r.Id) is { SettlementId: 1, Job: Job.Guard }).Id.Value;
+            world.KillForTest(guard1);
+            var afterKill = world.ReadSettlements();
+            Check(afterKill[0].Population == popPerTown - 1 && afterKill[0].Guards == 0,
+                $"expected town 1 pop={popPerTown - 1}, guards=0 immediately after death; got pop={afterKill[0].Population}, guards={afterKill[0].Guards}");
+            world.Step();
+            var nextTick = world.ReadSettlements();
+            Check(nextTick[0].Population == popPerTown - 1, "population stays decremented after death tick");
+
+            // Load invalidates cache and recomputes cleanly.
+            var loaded = SimulationWorld.Load(new MemoryStream(SaveBytes(world)));
+            var lr = loaded.ReadSettlements();
+            Check(lr.SequenceEqual(nextTick), "loaded world recomputes matching settlement views");
+        }
+    }
+
+    // ---- Finding 11 -----------------------------------------------------------------------------
+
+    private static void TradeDealCachedPerRevision()
+    {
+        // One surplus town with 30 idle workers, 15 ineligible buyers (0 coins), then one buyer gains funds.
+        int width = 420;
+        var rows = Enumerable.Range(0, 16).Select(y => y is 0 or 15 ? new string('^', width) : "^" + new string('.', width - 2) + "^").ToList();
+        var world = new SimulationWorld(new SimulationOptions
+        {
+            WorldId = W,
+            Seed = 1111,
+            MapWidth = width,
+            MapHeight = 16,
+            Map = MapOverride.FromRows(rows),
+            Species = Default,
+            Vitals = new VitalsConfig(0, 0, 0, 0, 0, 250_000, 100_000, 4),
+            Mind = MindConfig.Default with { FatiguePerTick = 0 },
+            Settlements = SettlementConfig.Default with { FarmPlots = 0, WoodTarget = 0, FoodTarget = 60 },
+            Grants = ImmutableSortedDictionary<long, AuthorityGrant>.Empty.Add(God, AuthorityGrant.God),
+        });
+        // Town 1 (seller at x=20)
+        world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 20, 8, Faction.Human, "Seller"));
+        for (int k = 0; k < 30; k++)
+            world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 20, 8, Human));
+        // 15 buyer towns; towns 5 and 8 are equidistant from Seller (dx=100 vs dx=100 if placed around? Let's put Buyer 2..16:
+        // make towns 10 and 11 equidistant nearest buyers at distance 25 (x=45 -> wait: spacing >= 20!).
+        // Put Seller at x=120:
+        // Wait: all towns must be >= 20 apart. Put Seller at x=100, wait: can two towns be equidistant from Seller at (100,8)?
+        // Yes! Put one at (70, 8) (d=30) and one at (130, 8) (d=30), and the rest further east at x=155, 180, ...!
+        world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 70, 8, Faction.Demon, "EquidistantWest"));   // id 2? Wait: Seller was at 20! Let's check positions!
+        for (int i = 2; i < 16; i++)
+            world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 70 + i * 22, 8, Faction.Demon, $"Buyer{i}"));
+        world.Step();
+        // Actually let's test tie-break clearly in a separate dedicated world or arrange equidistant towns cleanly:
+        // Wait: in this world, Seller is at x=20; Buyer 2 is at x=70 (d=50), Buyer 3 at x=114 (d=94)...
+        world.SetStorageForTest(1, food: 300, wood: 100, coins: 100);
+        for (int id = 2; id <= 16; id++) world.SetStorageForTest(id, food: 0, wood: 100, coins: 0); // all ineligible
+
+        long scansBefore = world.TradeDealScans;
+        for (int t = 0; t < 40; t++) world.Step(); // all 30 idle workers think ~4 times each (~120+ PlanWork/Read checks)
+        long idleScans = world.TradeDealScans - scansBefore;
+        Check(idleScans <= 2, $"expected cached TradeDeal across 30 idle workers and 40 ticks (<=2 scans), got {idleScans}");
+
+        // Now give Buyer 4 (x=158, further) and Buyer 2 (x=70, nearest) funds; Buyer 2 must win and trigger re-evaluation.
+        world.SetStorageForTest(4, food: 0, wood: 100, coins: 100);
+        world.SetStorageForTest(2, food: 0, wood: 100, coins: 100);
+        long cursor = world.ReadEvents(0, 1).LatestSequence;
+        var events = Run(world, 250, ref cursor);
+        Check(world.TradeDealScans - scansBefore > idleScans, "funding buyer invalidated deal cache");
+        var sold = events.FirstOrDefault(e => e.Kind == EventKinds.TradeSold);
+        Check(sold.Kind == EventKinds.TradeSold && sold.Target == 2, $"expected nearest eligible buyer 2, got target={sold.Target}");
+
+        // Ascending-ID tie break when two buyers are equidistant from Seller.
+        var tieRows = Enumerable.Range(0, 16).Select(y => y is 0 or 15 ? new string('^', 100) : "^" + new string('.', 98) + "^").ToList();
+        var tieWorld = new SimulationWorld(new SimulationOptions
+        {
+            WorldId = W,
+            Seed = 1112,
+            MapWidth = 100,
+            MapHeight = 16,
+            Map = MapOverride.FromRows(tieRows),
+            Species = Default,
+            Vitals = new VitalsConfig(0, 0, 0, 0, 0, 250_000, 100_000, 4),
+            Mind = MindConfig.Default with { FatiguePerTick = 0 },
+            Settlements = SettlementConfig.Default with { FarmPlots = 0, WoodTarget = 0, FoodTarget = 60 },
+            Grants = ImmutableSortedDictionary<long, AuthorityGrant>.Empty.Add(God, AuthorityGrant.God),
+        });
+        tieWorld.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 50, 8, Faction.Human, "Hub"));      // id 1
+        tieWorld.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 20, 8, Faction.Demon, "LowerId"));  // id 2, distance 30
+        tieWorld.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 80, 8, Faction.Demon, "HigherId")); // id 3, distance 30
+        for (int k = 0; k < 3; k++)
+            tieWorld.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 50, 8, Human));
+        tieWorld.Step();
+        tieWorld.SetStorageForTest(1, food: 300, wood: 100, coins: 100);
+        tieWorld.SetStorageForTest(2, food: 0, wood: 100, coins: 100);
+        tieWorld.SetStorageForTest(3, food: 0, wood: 100, coins: 100);
+        long tieCursor = tieWorld.ReadEvents(0, 1).LatestSequence;
+        var tieEvents = Run(tieWorld, 80, ref tieCursor);
+        var tieSold = tieEvents.FirstOrDefault(e => e.Kind == EventKinds.TradeSold);
+        Check(tieSold.Kind == EventKinds.TradeSold && tieSold.Target == 2,
+            $"expected ascending-ID tie-break to pick buyer 2 over equidistant buyer 3, got {tieSold.Target}");
+    }
+
+    // ---- Finding 12 -----------------------------------------------------------------------------
+
+    private static void FoundingSkipsPlotsBeyondManhattan3()
+    {
+        // Make all tiles around (8,8) mountains except (8,8) and a single grass tile at offset (3,3) [distance 6],
+        // then separately at offset (2,1) [distance 3].
+        static int PlotCountForOffset(int dx, int dy)
+        {
+            var rows = Enumerable.Range(0, 17).Select(_ => new string('^', 17)).ToArray();
+            void SetGrass(int x, int y)
+            {
+                var arr = rows[y].ToCharArray();
+                arr[x] = '.';
+                rows[y] = new string(arr);
+            }
+            SetGrass(8, 8);
+            SetGrass(8 + dx, 8 + dy);
+            var world = new SimulationWorld(new SimulationOptions
+            {
+                WorldId = W,
+                Seed = 1212,
+                MapWidth = 17,
+                MapHeight = 17,
+                Map = MapOverride.FromRows(rows),
+                Grants = ImmutableSortedDictionary<long, AuthorityGrant>.Empty.Add(God, AuthorityGrant.God),
+            });
+            world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 8, 8, Faction.Human, "Crag"));
+            world.Step();
+            return world.ReadFarmPlots(1).Count;
+        }
+
+        Check(PlotCountForOffset(3, 3) == 0, "offset (3,3) has Manhattan distance 6 > 3 and must produce 0 plots");
+        Check(PlotCountForOffset(2, 1) == 1, "offset (2,1) has Manhattan distance 3 <= 3 and must produce 1 plot");
     }
 }

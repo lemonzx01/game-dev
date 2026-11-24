@@ -81,20 +81,43 @@ internal static class T016Tests
         var paid = events.Where(e => e.Kind == EventKinds.TradePaid).ToList();
         Check(loaded.Count > 0 && sold.Count > 0, $"a trade happened (loaded {loaded.Count}, sold {sold.Count})");
         Check(loaded.All(e => e.Target == 1) && sold.All(e => e.Target == 2) && sold.All(e => e.Reason == (int)ResourceKind.Food), "west sells food to east");
-        Check(paid.Zip(sold).All(p => p.First.Amount == p.Second.Amount * TradeConfig.Default.FoodPrice && p.First.Actor == 2 && p.First.Target == 1), "price × units paid by buyer to seller");
+        Check(paid.Count == sold.Count, $"equal sale ({sold.Count}) and payment ({paid.Count}) counts");
+        for (int i = 0; i < sold.Count; i++)
+        {
+            var s = sold[i]; var p = paid[i];
+            int price = TradeConfig.Default.Price((ResourceKind)s.Reason);
+            Check(p.Tick == s.Tick && p.Actor == s.Target && p.Target == 1 && p.Reason == price && p.Amount == s.Amount * price,
+                $"payment {i} matches sale tick, parties, price and amount");
+        }
 
         var (west, east) = (world.ReadSettlements()[0], world.ReadSettlements()[1]);
         long Sum(IEnumerable<WorldEvent> es, int town, int kind, ResourceKind res) => es.Where(e => e.Kind == kind && e.Target == town && e.Reason == (int)res).Sum(e => e.Amount);
+        long eatenWest = events.Where(e => e.Kind == EventKinds.EntityAte && e.Target == 1).Sum(e => e.Amount);
         long eatenEast = events.Where(e => e.Kind == EventKinds.EntityAte && e.Target == 2).Sum(e => e.Amount);
-        long eastIn = sold.Sum(e => e.Amount) + Sum(events, 2, EventKinds.Deposited, ResourceKind.Food);
-        Check(east.Food == eastIn - eatenEast, $"buyer stock = bought + deposited − eaten ({east.Food} vs {eastIn} − {eatenEast})");
+        long westFoodExpected = 300 + Sum(events, 1, EventKinds.Deposited, ResourceKind.Food) - Sum(loaded, 1, EventKinds.TradeLoaded, ResourceKind.Food) - eatenWest;
+        long westWoodExpected = 100 + Sum(events, 1, EventKinds.Deposited, ResourceKind.Wood) - Sum(loaded, 1, EventKinds.TradeLoaded, ResourceKind.Wood);
+        long eastFoodExpected = 0 + Sum(sold, 2, EventKinds.TradeSold, ResourceKind.Food) + Sum(events, 2, EventKinds.Deposited, ResourceKind.Food) - eatenEast;
+        long eastWoodExpected = 100 + Sum(sold, 2, EventKinds.TradeSold, ResourceKind.Wood) + Sum(events, 2, EventKinds.Deposited, ResourceKind.Wood);
+        Check(west.Food == westFoodExpected && west.Wood == westWoodExpected,
+            $"seller stock conserved (food {west.Food} vs {westFoodExpected}, wood {west.Wood} vs {westWoodExpected})");
+        Check(east.Food == eastFoodExpected && east.Wood == eastWoodExpected,
+            $"buyer stock conserved (food {east.Food} vs {eastFoodExpected}, wood {east.Wood} vs {eastWoodExpected})");
         long income = paid.Sum(e => e.Amount);
-        Check(west.Coins == 100 + income && east.Coins == 100 - income, $"coins moved seller +{income}, buyer −{income}");
+        Check(income > 0 && west.Coins == 100 + income && east.Coins == 100 - income, $"coins moved seller +{income}, buyer −{income}");
         Check(world.ReadSettlements().Sum(s => s.Coins) == coinsBefore, "coins conserved between towns");
-        long carriedHome = events.Where(e => e.Kind == EventKinds.Deposited && e.Target == 1 && e.Reason == (int)ResourceKind.Food).Sum(e => e.Amount);
-        long lost = events.Where(e => e.Kind == EventKinds.CarryLost).Sum(e => e.Amount);
-        long inTransit = world.ReadSnapshot().Chunks.SelectMany(c => c).Sum(r => (long)world.ReadEntityDetails(W, r.Id)!.CarryAmount);
-        Check(loaded.Sum(e => e.Amount) <= sold.Sum(e => e.Amount) + carriedHome + lost + inTransit, "every loaded unit is sold, brought home, lost or still carried");
+        foreach (long actor in loaded.Select(e => e.Actor).Distinct())
+        {
+            var details = world.ReadEntityDetails(W, new EntityId(actor));
+            foreach (var res in new[] { ResourceKind.Food, ResourceKind.Wood })
+            {
+                long inActor = events.Where(e => e.Actor == actor && e.Reason == (int)res
+                    && e.Kind is EventKinds.Harvested or EventKinds.Gathered or EventKinds.TradeLoaded).Sum(e => e.Amount);
+                long outActor = events.Where(e => e.Actor == actor && e.Reason == (int)res
+                    && e.Kind is EventKinds.Deposited or EventKinds.TradeSold or EventKinds.CarryLost).Sum(e => e.Amount);
+                long carriedActor = details is { LifeState: LifeStates.Alive } && details.CarryKind == res ? details.CarryAmount : 0;
+                Check(inActor == outActor + carriedActor, $"trader #{actor} {res} cargo conserved ({inActor} vs {outActor} + {carriedActor})");
+            }
+        }
         Check(events.Any(e => e.Kind == EventKinds.ActionStarted && e.Reason == (int)ActionKind.Work), "traders worked");
     }
 

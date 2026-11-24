@@ -337,6 +337,7 @@ public sealed partial class SimulationWorld
         ValidateCropScheduler();
         ValidateSettlementEntities();
         snapshot = null;
+        settlementViews = null;
     }
 
     private void ValidateCropScheduler()
