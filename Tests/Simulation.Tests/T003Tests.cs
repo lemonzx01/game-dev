@@ -219,11 +219,11 @@ internal static class T003Tests
         s.Schedule(5, 20, 3, new WorkItem(WorkKind.TestNoop, 5), false);
         s.Schedule(6, 0, 0, new WorkItem(WorkKind.TestNoop, 6), true);
         s.Schedule(5, 99, 0, new WorkItem(WorkKind.TestNoop, 7), true);
-        Check(s.Run(5, w => order.Add(w.Subject)) == 2, "budget");
+        Check(s.Run(5, w => { order.Add(w.Subject); return true; }) == 2, "budget");
         Check(order.SequenceEqual([7L, 3, 4]), $"order {string.Join(",", order)}");
-        Check(s.Run(6, w => order.Add(w.Subject)) == 2, "carry");
+        Check(s.Run(6, w => { order.Add(w.Subject); return true; }) == 2, "carry");
         Check(order.SequenceEqual([7L, 3, 4, 6, 2, 5]), "required first, remainder carried in order");
-        s.Run(7, w => order.Add(w.Subject));
+        s.Run(7, w => { order.Add(w.Subject); return true; });
         Check(order[^1] == 1 && s.DiscretionaryCount == 0, "last carried item");
         bool threw = false;
         try { s.Schedule(7, 0, 0, new WorkItem(WorkKind.TestNoop, 0), true); } catch (InvalidOperationException) { threw = true; }

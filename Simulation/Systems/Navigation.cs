@@ -5,23 +5,38 @@ namespace FantasyWorld.Simulation;
 /// deterministically). Expands at most <c>nodeBudget</c> cells within a Chebyshev radius; an unreachable or
 /// out-of-budget goal is simply "not found". T006 replaces this with a budgeted A* request queue.
 /// </summary>
-internal static class Navigation
+internal sealed class Navigation
 {
     private static readonly (int Dx, int Dy)[] Steps = [(0, -1), (-1, 0), (1, 0), (0, 1)];
 
+    // Reused per world (T014): visited stamps instead of a per-search Dictionary, and a fixed ring queue.
+    private readonly int[] stamp;
+    private readonly int[] parent;
+    private readonly int[] queue;
+    private int generation;
+
+    public Navigation(int cells)
+    {
+        stamp = new int[cells];
+        parent = new int[cells];
+        queue = new int[cells];
+    }
+
     /// <returns>Path of cells (excluding the start, ending at the goal), empty if the start is a goal, or null if not found.</returns>
-    public static int[]? FindNearest(Terrain[] terrain, int width, int height, int startX, int startY,
+    public int[]? FindNearest(Terrain[] terrain, int width, int height, int startX, int startY,
         int radius, int nodeBudget, Func<int, bool> isGoal, out int expanded)
     {
         expanded = 0;
         int start = startY * width + startX;
         if (isGoal(start)) return [];
-        var parent = new Dictionary<int, int> { [start] = -1 }; // lookup only, never iterated
-        var queue = new Queue<int>();
-        queue.Enqueue(start);
-        while (queue.Count > 0 && expanded < nodeBudget)
+        if (++generation == int.MaxValue) { Array.Clear(stamp); generation = 1; }
+        stamp[start] = generation;
+        parent[start] = -1;
+        int head = 0, tail = 0;
+        queue[tail++] = start;
+        while (head < tail && expanded < nodeBudget)
         {
-            int cell = queue.Dequeue();
+            int cell = queue[head++];
             expanded++;
             int cx = cell % width, cy = cell / width;
             foreach (var (dx, dy) in Steps)
@@ -30,20 +45,22 @@ internal static class Navigation
                 if ((uint)nx >= (uint)width || (uint)ny >= (uint)height) continue;
                 if (Math.Max(Math.Abs(nx - startX), Math.Abs(ny - startY)) > radius) continue;
                 int next = ny * width + nx;
-                if (parent.ContainsKey(next) || !TerrainRules.IsPassable(terrain[next])) continue;
+                if (stamp[next] == generation || !TerrainRules.IsPassable(terrain[next])) continue;
+                stamp[next] = generation;
                 parent[next] = cell;
-                if (isGoal(next)) return Unwind(parent, next);
-                queue.Enqueue(next);
+                if (isGoal(next)) return Unwind(next);
+                queue[tail++] = next;
             }
         }
         return null;
     }
 
-    private static int[] Unwind(Dictionary<int, int> parent, int goal)
+    private int[] Unwind(int goal)
     {
-        var path = new List<int>();
-        for (int c = goal; parent[c] != -1; c = parent[c]) path.Add(c);
-        path.Reverse();
-        return path.ToArray();
+        int length = 0;
+        for (int c = goal; parent[c] != -1; c = parent[c]) length++;
+        var path = new int[length];
+        for (int c = goal, i = length - 1; parent[c] != -1; c = parent[c], i--) path[i] = c;
+        return path;
     }
 }
