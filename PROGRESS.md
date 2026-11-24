@@ -6,6 +6,10 @@ T001–T014 DONE and merged to main (2026-11-24; T003–T014 merged by owner ins
 
 ## Handoff log
 
+**2026-11-25 | Claude Code | T019 visuals | main | merged (self-reviewed, A009)**
+
+- Dragon 48 px sprite (tools/art/make_dragon.py, CC0); pixelfx effects (fireball, blunt-hit, heal-aoe, collect-burst; MIT, commit 5294518) driven by real SpellCast/Attacked/AnimalTamed events in a camera-following FxLayer; inspector mana/trust/tamed; feed lines; God spawn cycle includes the dragon. Merged main: 89/89 tests; T007, T008, GodTools, Settlement and new Effects acceptances pass; frames checked (docs/handoffs/T019-visuals*.png). Handoff docs/handoffs/T019-visuals.md.
+
 **2026-11-25 | Claude Code | Integrated Codex review of T015–T017 | main | merged (doc only)**
 
 - docs/reviews/2026-11-codex-review-T015-T017.md: 12 findings (2 High, 9 Medium, 1 Low). Fixes handed to Antigravity as FIX-R1 (docs/prompts/antigravity-review-fixes.md; Simulation/** + Tests/** only) while Claude Code does T019 visuals in Game/**.
