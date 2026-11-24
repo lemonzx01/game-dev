@@ -3,22 +3,38 @@ using Godot;
 
 namespace Game.Presentation;
 
-// Presentation-only light: tints the world by the simulation clock (darker at night, warm at dawn/dusk).
-// UI on CanvasLayers is unaffected. It reads the snapshot time and changes nothing in the simulation.
+// Presentation-only light: tints the world by the simulation clock (deep blue night, gold/copper dawn and dusk, warm
+// bright noon). UI on CanvasLayers is unaffected. It reads the snapshot time and changes nothing in the simulation.
 public partial class DayNightTint : CanvasModulate
 {
     [Export] public NodePath BridgePath = "../SimulationBridge";
-
     private SimulationBridge bridge = null!;
+
+    // Mirrored around noon. Short gold and copper intervals keep the sky changing at the horizon.
+    private static readonly (float Phase, Color Tint)[] Palette =
+    [
+        (0f, new("697cab")), (0.17f, new("7885aa")), (0.22f, new("bc8b91")),
+        (0.26f, new("ffb779")), (0.32f, new("ffdbab")), (0.42f, new("fff2dc")),
+        (0.5f, new("fff9ed"))
+    ];
 
     public override void _Ready() => bridge = GetNode<SimulationBridge>(BridgePath);
 
     public override void _Process(double delta)
     {
-        float day = (float)bridge.Snapshot.Time.TickOfDay / bridge.TicksPerDay;      // 0 = midnight, 0.5 = noon
-        float light = 0.5f - 0.5f * Mathf.Cos(day * Mathf.Tau);                       // 0 at midnight, 1 at noon
-        var night = new Color(0.45f, 0.5f, 0.72f);
-        var dusk = new Color(1f, 0.85f, 0.72f);
-        Color = light < 0.5f ? night.Lerp(dusk, light * 2f) : dusk.Lerp(Colors.White, (light - 0.5f) * 2f);
+        float day = (float)bridge.Snapshot.Time.TickOfDay / bridge.TicksPerDay;
+        float phase = Mathf.Min(day, 1f - day);
+        for (int i = 1; i < Palette.Length; i++)
+        {
+            var (end, tint) = Palette[i];
+            if (phase > end) continue;
+            var (start, previous) = Palette[i - 1];
+            Color = previous.Lerp(tint, Mathf.SmoothStep(start, end, phase));
+            return;
+        }
     }
+
+    /// <summary>0 by day, rising through dusk to 1 at night (day = fraction of the day, 0 = midnight).</summary>
+    internal static float LampStrength(float day) =>
+        1f - Mathf.SmoothStep(0.17f, 0.29f, Mathf.Min(day, 1f - day));
 }

@@ -1,4 +1,4 @@
-[gd_scene load_steps=12 format=3]
+[gd_scene load_steps=16 format=3]
 
 [ext_resource type="Script" path="res://Integration/SimulationBridge.cs" id="1_bridge"]
 [ext_resource type="Script" path="res://Presentation/CameraController.cs" id="2_camera"]
@@ -11,6 +11,13 @@
 [ext_resource type="Script" path="res://Presentation/TownsPanel.cs" id="9_towns"]
 [ext_resource type="Script" path="res://Presentation/DayNightTint.cs" id="10_tint"]
 [ext_resource type="Script" path="res://Presentation/EffectsLayer.cs" id="11_fx"]
+
+[ext_resource type="Script" path="res://Presentation/LightingTowns.cs" id="12_lights"]
+[ext_resource type="Script" path="res://Presentation/LightingFocus.cs" id="13_focus"]
+[ext_resource type="Shader" path="res://Presentation/Shaders/tilt_shift.gdshader" id="14_shader"]
+
+[sub_resource type="ShaderMaterial" id="FocusMaterial"]
+shader = ExtResource("14_shader")
 
 [node name="Main" type="Node2D"]
 
@@ -32,6 +39,9 @@ script = ExtResource("5_observer")
 [node name="GodTools" type="Node2D" parent="."]
 script = ExtResource("8_god")
 
+[node name="LightingTowns" type="Node2D" parent="."]
+script = ExtResource("12_lights")
+
 [node name="DayNight" type="CanvasModulate" parent="."]
 script = ExtResource("10_tint")
 
@@ -40,6 +50,16 @@ follow_viewport_enabled = true
 
 [node name="Effects" type="Node2D" parent="FxLayer"]
 script = ExtResource("11_fx")
+
+[node name="LightingFocus" type="CanvasLayer" parent="."]
+
+[node name="Focus" type="ColorRect" parent="LightingFocus"]
+visible = false
+material = SubResource("FocusMaterial")
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+script = ExtResource("13_focus")
 
 [node name="UI" type="CanvasLayer" parent="."]
 
