@@ -5,8 +5,8 @@
 | Task ID | FIX-R2 |
 | Agent | Google Antigravity (self-reviewed per A009) |
 | Branch | `fix/R2-review-T019` |
-| Worktree | `F:\Code\game-dev\worktrees\FIX-R2-antigravity` |
-| State | `DONE` (Finding 13 intentionally recorded `Open` with §9 design proposal) |
+| Worktree | `F:\Code\game-dev\worktrees\FIX-R2-antigravity` (also merged `--no-ff` to local `main` at `F:\Code\game-dev`) |
+| State | `REVIEW` (local `main` merged & verified; `git push origin` requires interactive GitHub credentials; Finding 13 recorded `Open`) |
 | StateSchema | 15 (bumped from 14; golden hash re-pinned in `Tests/Simulation.Tests/Program.cs`) |
 | Source Review | `docs/reviews/2026-11-codex-review-T019.md` |
 | Scope Split | Simulation findings `1–9, 13, 14, 15-sim` (presentation `10–12, 15-visual` completed by Claude Code in `docs/handoffs/FIX-R2-visuals.md`) |
@@ -83,3 +83,6 @@ Currently tamed/domestic animals enforce `WithinAnimalLeash` (town `Radius`) on 
   - `%USERPROFILE%\scoop\apps\godot-mono\current\godot-mono.console.exe --headless --path Game --import` -> succeeded (`.import` changes reverted afterward with `git checkout -- Game/Assets`).
   - `res://Tests/EffectsAcceptance.tscn` -> `EFFECTS_ACCEPTANCE_PASS tick=8`
   - `res://Tests/SettlementAcceptance.tscn` -> `SETTLEMENT_ACCEPTANCE_PASS tick=3002 Ashford:pop10/food217/wood62 Cinderhold:pop10/food207/wood50`
+- **Local `main` verification & push status:**
+  - Merged `--no-ff fix/R2-review-T019` into local `main` at `F:\Code\game-dev`, added `PROGRESS.md` entry, and re-ran `dotnet test F:\Code\game-dev\Tests\Simulation.Tests -c Release -m:1` -> **112/112 test groups passed**.
+  - `git push origin main fix/R2-review-T019` could not complete non-interactively (`fatal: could not read Username for 'https://github.com': terminal prompts disabled`); ready for owner or Claude Code to push local `main` and `fix/R2-review-T019`.
