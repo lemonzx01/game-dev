@@ -22,7 +22,7 @@ T001 and T002 are DONE. A007 revision 2 is Accepted. Any agent may take any uncl
 | T014 | Must | Profiling, correctness, optimization | T006–T013 (applicable) | measured scenarios 100+ entities; attempt 1,000 if stable; document bottlenecks and no regressions; independent review (not the author) | DONE (merged, 348af0c; independent review still pending) |
 | T015 | Should | Two settlements, humans/demons, farm/storage/jobs | T009,T010 | stock conservation, production/consumption and display; no inherent good/evil rule | DONE (merged; self-reviewed per A009) |
 | T016 | Should | Basic trade and guards | T015 | seller loses stock and receives payment, buyer inverse; guard responds to threat | DONE (merged; self-reviewed per A009) |
-| T017 | Should | Skills and reading | T005,T010 | gains from activities; interrupted read awards actual progress, no duplicate XP | TODO |
+| T017 | Should | Skills and reading | T005,T010 | gains from activities; interrupted read awards actual progress, no duplicate XP | DONE |
 | T018 | Must | Playtest, bugfix, export build and docs | all completed Musts | Windows build if toolchain supports it, 15–30 minute observer trial, known bugs and verified commands | IN_PROGRESS (merged: Play.cmd, God tools, save/load, standalone Windows export build/windows/FantasyWorldSimulator.exe; remaining: owner 15–30 min playtest + known-bugs list) |
 | T019 | Stretch | Simple combat, magic, dragon, tame | T009,T010,T014 | separate small tasks; costs and valid targets; one dragon species/tame trust if time | TODO |
 | T020 | Stretch | Possession movement/interact | T008,T014 | take/release control, same ID/state, AI resumes, other agents continue | TODO |
