@@ -2,9 +2,15 @@
 
 ## Current state
 
-T001 DONE. A007 revision 2 Accepted. T002 implementation and Release builds complete; runtime verification BLOCKED in Codex.
+T001 DONE. A007 revision 2 Accepted. T002 DONE (Release build + 7/7 runtime acceptance test groups passed on Windows Host). Ready for T003+ parallel development.
 
 ## Handoff log
+
+**2026-11-24 | Antigravity (Coordinator) | T002 DONE | feat/T002-simulation-foundation | runtime verification**
+
+- ตรวจรับ T002 ครบตามเกณฑ์ 9 ข้อใน TASKS.md และตรวจสอบ Source Code (`Simulation/Determinism.cs`, `Tests/Simulation.Tests/Program.cs`) ตรงกับ Release build ปัจจุบัน (`Simulation.dll`, `Headless.dll`, `Simulation.Tests.dll`)
+- ผลรันจริงบน Windows Host โดยเจ้าของโปรเจกต์: `dotnet run --project ./Tests/Simulation.Tests -c Release --no-build` → Exit Code `0`, ผ่าน `7/7 T002 test groups passed` (`Pure simulation assembly`, `A007 RNG vector`, `Monotonic identity and checked exhaustion`, `Stable canonical hash and process replay`, `Paged events and explicit gap`, `Owner-thread and re-entry guards`, `Snapshot lifetime`)
+- สถานะ: เปลี่ยน T002 เป็น `DONE`; งาน `T003` พร้อมเริ่ม และสามารถแตกงานอิสระคู่ขนานสำหรับ `T007` (N3 / UI prototype), `T013` (Save schema draft), และ `T006` (Mock/Benchmark specs) ได้โดยไม่ข้าม Mandatory Dependencies
 
 **2026-11-24 | Codex | T002 | feat/T002-simulation-foundation | runtime verification**
 
