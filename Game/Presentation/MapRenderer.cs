@@ -288,22 +288,36 @@ public partial class MapRenderer : Node2D
             float w = 1.6f * CellSize;
             DrawTextureRectRegion(humanoid, new Rect2(new Vector2((at.X + 0.5f) * CellSize - w / 2, (at.Y + 1) * CellSize - w), new Vector2(w, w)), Ring);
         }
-        int sheetRow = SheetRow(row);
-        if (sheetRow < 0)
+        if (SpriteOf(row) is not { } sprite)
         {
             DrawRect(new Rect2(at * CellSize, Vector2.One * CellSize * 0.8f), dead ? new Color(0.45f, 0.45f, 0.45f, 0.8f) : PlaceholderColor);
             return;
         }
+        // Bottom-centred on the cell with feet on its lower edge; mirrored when facing left.
+        float size = sprite.Region.Size.X;
+        var origin = new Vector2((at.X + 0.5f) * CellSize, (at.Y + 1) * CellSize + 2);
+        DrawSetTransform(origin, 0, new Vector2(sprite.Mirrored ? -1 : 1, 1));
+        DrawTextureRectRegion(sprite.Sheet, new Rect2(-size / 2, -size, size, size), sprite.Region,
+            dead ? new Color(0.78f, 0.76f, 0.8f, 0.9f) : Colors.White);
+        DrawSetTransform(Vector2.Zero, 0, Vector2.One);
+    }
+
+    /// <summary>
+    /// The sheet, source frame and facing a creature is drawn with this frame (null: no sprite, placeholder square).
+    /// The dragon has its own 48 px sheet (Assets/Art/dragon_48.png, same columns); everyone else uses the 24 px sheet.
+    /// Also used by the acceptance test to prove what is actually drawn.
+    /// </summary>
+    public (Texture2D Sheet, Rect2 Region, bool Mirrored)? SpriteOf(EntityRow row)
+    {
+        int sheetRow = SheetRow(row);
+        if (sheetRow < 0) return null;
+        bool dead = row.LifeState == LifeStates.Dead;
+        motion.TryGetValue(row.Id.Value, out var m);
+        bool moving = !dead && m is not null && m.Pos.DistanceSquaredTo(m.Target) > 0.0004f;
         int col = SheetColumn(row, moving, sheetRow >= SheepRow);
-        // The dragon has its own 48 px sheet (Assets/Art/dragon_48.png, same columns); everyone else uses the 24 px sheet.
         bool big = sheetRow == DragonRow;
         int size = big ? DragonFrame : Frame;
         var (sheet, srcRow) = big ? (dragon, 0) : (characters, sheetRow);
-        // Bottom-centred on the cell with feet on its lower edge; mirrored when facing left.
-        var origin = new Vector2((at.X + 0.5f) * CellSize, (at.Y + 1) * CellSize + 2);
-        DrawSetTransform(origin, 0, new Vector2(m is { Left: true } ? -1 : 1, 1));
-        DrawTextureRectRegion(sheet, new Rect2(-size / 2, -size, size, size), new Rect2(col * size, srcRow * size, size, size),
-            dead ? new Color(0.78f, 0.76f, 0.8f, 0.9f) : Colors.White);
-        DrawSetTransform(Vector2.Zero, 0, Vector2.One);
+        return (sheet, new Rect2(col * size, srcRow * size, size, size), m is { Left: true });
     }
 }

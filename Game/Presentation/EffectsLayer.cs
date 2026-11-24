@@ -29,7 +29,11 @@ public partial class EffectsLayer : Node2D
     private SimulationBridge bridge = null!;
     private Sheet fireball = null!, hit = null!, heal = null!, burst = null!;
     private readonly List<Fx> active = [];
-    private readonly HashSet<(long Tick, long Actor, long Target)> bolts = [];
+    // Firebolts whose matching Attacked record may arrive in a later drain (FIX-R2 #10): one use each, bounded,
+    // expired by simulation tick and cleared when the world is replaced (#11).
+    private readonly List<(long Tick, long Actor, long Target)> pendingBolts = [];
+    private const int MaxPendingBolts = 64, BoltTicksToLive = 2;
+    private int generation = -1;
 
     public int ActiveCount => active.Count;
 
@@ -51,13 +55,27 @@ public partial class EffectsLayer : Node2D
 
     private Vector2 Feet(int x, int y) => new((x + 0.5f) * CellSize, (y + 1) * CellSize);
 
+    private bool HasRoom => active.Count < MaxActive;
+
     private void Spawn(Fx fx)
     {
-        if (active.Count < MaxActive) active.Add(fx);
+        if (HasRoom) active.Add(fx);
+    }
+
+    /// <summary>Drops every effect and correlation (world replaced by load or a new game).</summary>
+    public void Reset()
+    {
+        active.Clear();
+        pendingBolts.Clear();
     }
 
     public override void _Process(double delta)
     {
+        if (generation != bridge.WorldGeneration)
+        {
+            generation = bridge.WorldGeneration;
+            Reset(); // effects from an abandoned timeline must not land on the loaded world (FIX-R2 #11)
+        }
         Handle(bridge.EventsThisFrame);
         Advance((float)delta);
         QueueRedraw();
@@ -66,30 +84,41 @@ public partial class EffectsLayer : Node2D
     /// <summary>Starts effects for a batch of drained events.</summary>
     public void Handle(IEnumerable<WorldEvent> events)
     {
-        // Firebolts first, so the impact they cause is drawn when the fireball lands rather than at once.
-        bolts.Clear();
+        // Firebolts first, so the impact they cause is drawn when the fireball lands rather than at once. The suppression
+        // entry is kept even when there is no room to draw the fireball, so the matching hit is never drawn early.
+        long latest = long.MinValue;
         foreach (var e in events)
         {
+            latest = System.Math.Max(latest, e.Tick);
             if (e.Kind != EventKinds.SpellCast) continue;
             if (e.Reason == (int)Spell.Firebolt)
             {
-                bolts.Add((e.Tick, e.Actor, e.Target));
+                if (pendingBolts.Count == MaxPendingBolts) pendingBolts.RemoveAt(0);
+                pendingBolts.Add((e.Tick, e.Actor, e.Target));
+                if (!HasRoom) continue; // no allocation or caster lookup for an effect that would be dropped (FIX-R2 #12)
                 var to = Feet(e.X, e.Y) - new Vector2(0, 10);
                 var from = bridge.Details(e.Actor) is { } c ? Feet(c.X, c.Y) - new Vector2(0, 12) : to;
                 float flight = Mathf.Clamp(from.DistanceTo(to) / 160f, 0.12f, 0.5f);
                 Spawn(new Fx { Sheet = fireball, Pos = from, From = from, To = to, Flight = flight, Scale = 0.6f });
             }
-            else if (e.Reason == (int)Spell.Heal)
+            else if (e.Reason == (int)Spell.Heal && HasRoom)
                 Spawn(new Fx { Sheet = heal, Pos = Feet(e.X, e.Y), Scale = 0.6f });
         }
         foreach (var e in events)
         {
-            if (e.Kind == EventKinds.Attacked && !bolts.Contains((e.Tick, e.Actor, e.Target)))
-                Spawn(new Fx { Sheet = hit, Pos = Feet(e.X, e.Y), Scale = 0.45f });
-            else if (e.Kind == EventKinds.AnimalTamed)
+            if (e.Kind == EventKinds.Attacked)
+            {
+                int bolt = pendingBolts.IndexOf((e.Tick, e.Actor, e.Target));
+                if (bolt >= 0) pendingBolts.RemoveAt(bolt); // the fireball's landing draws this impact
+                else if (HasRoom) Spawn(new Fx { Sheet = hit, Pos = Feet(e.X, e.Y), Scale = 0.45f });
+            }
+            else if (e.Kind == EventKinds.AnimalTamed && HasRoom)
                 Spawn(new Fx { Sheet = burst, Pos = Feet(e.X, e.Y) - new Vector2(0, 6), Scale = 0.5f });
         }
+        if (latest != long.MinValue) pendingBolts.RemoveAll(b => b.Tick < latest - BoltTicksToLive);
     }
+
+    public int PendingBoltCount => pendingBolts.Count;
 
     /// <summary>Ages effects by real time: projectiles fly and land, one-shots end after their last frame.</summary>
     public void Advance(float dt)

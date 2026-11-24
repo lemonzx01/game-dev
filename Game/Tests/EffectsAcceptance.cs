@@ -32,6 +32,7 @@ public partial class EffectsAcceptance : Node
             AddChild(root);
             bridge = root.GetNode<SimulationBridge>("SimulationBridge");
             effects = root.GetNode<EffectsLayer>("FxLayer/Effects");
+            var renderer = root.GetNode<MapRenderer>("MapRenderer");
             var feed = root.GetNode<EventFeed>("UI/Feed");
             var inspector = root.GetNode<InspectorPanel>("UI/Inspector");
             var god = root.GetNode<GodTools>("GodTools");
@@ -58,9 +59,11 @@ public partial class EffectsAcceptance : Node
 
             bool hitSeen = false;
             long dragon = 0;
-            for (int i = 0; i < 400 && !hitSeen; i++)
+            int lastX = int.MinValue, turnsSeen = 0, bodiesChecked = 0;
+            for (int i = 0; i < 400 && (!hitSeen || turnsSeen == 0); i++)
             {
                 bridge._Process(0.25);
+                renderer._Process(0.25);
                 effects._Process(0.25);
                 feed._Process(0.25);
                 foreach (var e in bridge.EventsThisFrame)
@@ -68,25 +71,78 @@ public partial class EffectsAcceptance : Node
                     if (e.Kind == EventKinds.CommandApplied && dragon == 0) dragon = e.Target;
                     if (e.Kind == EventKinds.Attacked && (e.Target == dragon || e.Actor == dragon)) hitSeen = true;
                 }
+                // FIX-R2 #15: the dragon is drawn from its own 48 px sheet, a non-empty frame, mirrored when it last stepped left.
+                if (dragon != 0 && bridge.Snapshot.Chunks.SelectMany(c => c).FirstOrDefault(r => r.Id.Value == dragon) is { VisualKey: SpeciesCatalog.Dragon } row
+                    && row.LifeState == LifeStates.Alive)
+                {
+                    var sprite = renderer.SpriteOf(row);
+                    Check(sprite is { } sp && sp.Sheet.ResourcePath.EndsWith("dragon_48.png") && sp.Region.Size == new Vector2(48, 48), "the dragon is drawn from its 48 px sheet");
+                    if (lastX != int.MinValue && row.X != lastX)
+                    {
+                        Check(sprite!.Value.Mirrored == row.X < lastX, $"the dragon faces the way it stepped ({lastX} -> {row.X})");
+                        turnsSeen++;
+                    }
+                    lastX = row.X;
+                    if (bodiesChecked < 3)
+                    {
+                        using var sheet = Image.LoadFromFile(sprite!.Value.Sheet.ResourcePath);
+                        using var frame = sheet.GetRegion((Rect2I)sprite.Value.Region);
+                        int opaque = 0;
+                        for (int y = 0; y < frame.GetHeight(); y++)
+                            for (int x = 0; x < frame.GetWidth(); x++)
+                                if (frame.GetPixel(x, y).A > 0.5f) opaque++;
+                        Check(opaque > 300, $"the dragon frame has a body ({opaque} opaque pixels)");
+                        bodiesChecked++;
+                    }
+                }
             }
             Check(dragon != 0 && bridge.Details(dragon)?.SpeciesKey == SpeciesCatalog.Dragon, "the dragon was spawned");
             Check(hitSeen, "the dragon fought");
+            Check(turnsSeen > 0 && bodiesChecked > 0, "the dragon moved sideways at least once (facing checked) and its frames were checked");
             Check(effects.Active.Contains("blunt-hit"), "a real hit started an impact effect");
 
             // Firebolt: a fireball flies, then lands as an impact; Heal and taming play their own effects.
             effects.Advance(5f);
             Check(effects.ActiveCount == 0, "one-shots end");
-            var caster = bridge.Details(dragon)!;
+            // A person casts at the dragon. FIX-R2 #10: the SpellCast and its Attacked arrive in different drains.
+            long mage = bridge.Snapshot.Chunks.SelectMany(c => c).First(r => r.VisualKey == SpeciesCatalog.Human && r.LifeState == LifeStates.Alive).Id.Value;
+            var target = bridge.Details(dragon)!;
+            long t = bridge.Snapshot.Tick;
+            effects.Handle([new WorldEvent(0, t, EventKinds.SpellCast, 0, mage, dragon, target.X, target.Y, (int)Spell.Firebolt, 40)]);
             effects.Handle([
-                new WorldEvent(0, 1, EventKinds.SpellCast, 0, dragon, dragon, caster.X + 3, caster.Y, (int)Spell.Firebolt, 40),
-                new WorldEvent(0, 1, EventKinds.Attacked, 0, dragon, dragon, caster.X + 3, caster.Y, 0, 75_000),
-                new WorldEvent(0, 1, EventKinds.SpellCast, 0, dragon, dragon, caster.X, caster.Y, (int)Spell.Heal, 250_000),
-                new WorldEvent(0, 1, EventKinds.AnimalTamed, 0, dragon, dragon, caster.X, caster.Y, 1, SpeciesCatalog.Deer),
+                new WorldEvent(0, t, EventKinds.Attacked, 0, mage, dragon, target.X, target.Y, 0, 75_000),
+                new WorldEvent(0, t, EventKinds.SpellCast, 0, mage, mage, target.X, target.Y, (int)Spell.Heal, 250_000),
+                new WorldEvent(0, t, EventKinds.AnimalTamed, 0, mage, dragon, target.X, target.Y, 1, SpeciesCatalog.Deer),
             ]);
             var names = effects.Active.OrderBy(n => n).ToArray();
-            Check(names.SequenceEqual(new[] { "collect-burst", "fireball", "heal-aoe" }), $"fireball in flight, no early impact ({string.Join(",", names)})");
+            Check(names.SequenceEqual(new[] { "collect-burst", "fireball", "heal-aoe" }), $"fireball in flight, no early impact across drains ({string.Join(",", names)})");
+            Check(effects.PendingBoltCount == 0, "the bolt suppression was used once");
+            effects.Handle([new WorldEvent(0, t, EventKinds.Attacked, 0, dragon, mage, target.X, target.Y, 0, 700_000)]);
+            Check(effects.Active.Count(n => n == "blunt-hit") == 1, "an unrelated melee hit still plays at once");
             effects.Advance(0.6f);
-            Check(!effects.Active.Contains("fireball") && effects.Active.Contains("blunt-hit"), "the fireball landed as an impact");
+            Check(!effects.Active.Contains("fireball") && effects.Active.Count(n => n == "blunt-hit") == 2, "the fireball landed as exactly one impact");
+
+            // FIX-R2 #12: a flood of events never exceeds the cap, and suppression stays bounded.
+            effects.Advance(5f);
+            var flood = new System.Collections.Generic.List<WorldEvent>();
+            for (int k = 0; k < 400; k++) flood.Add(new WorldEvent(0, t + 1, EventKinds.Attacked, 0, mage, dragon, target.X, target.Y, 0, 1));
+            for (int k = 0; k < 200; k++) flood.Add(new WorldEvent(0, t + 1, EventKinds.SpellCast, 0, k + 1000, dragon, target.X, target.Y, (int)Spell.Firebolt, 40));
+            effects.Handle(flood);
+            Check(effects.ActiveCount <= effects.MaxActive && effects.PendingBoltCount <= 64, $"bounded under a flood ({effects.ActiveCount} active, {effects.PendingBoltCount} pending)");
+            effects.Advance(5f); // fireballs land and start their impacts
+            effects.Advance(5f); // the impacts finish
+            Check(effects.ActiveCount == 0, "the flood fully expires");
+
+            // FIX-R2 #11: a fireball in flight when the world is replaced never lands on the loaded world.
+            string save = ProjectSettings.GlobalizePath("user://effects_acceptance.fws");
+            bridge.SaveTo(save);
+            effects.Handle([new WorldEvent(0, t, EventKinds.SpellCast, 0, mage, dragon, target.X, target.Y, (int)Spell.Firebolt, 40)]);
+            Check(effects.Active.Contains("fireball"), "a fireball is in flight before load");
+            bridge.LoadFrom(save);
+            effects._Process(0.01);
+            Check(effects.ActiveCount == 0 && effects.PendingBoltCount == 0, "load clears effects from the old timeline");
+            effects.Advance(1f);
+            Check(effects.ActiveCount == 0, "no stale impact lands after load");
 
             Check(feed.Format(new WorldEvent(0, 5, EventKinds.SpellCast, 0, 1, dragon, 0, 0, (int)Spell.Firebolt, 40))!.Contains("casts Firebolt"), "feed: Firebolt");
             Check(feed.Format(new WorldEvent(0, 5, EventKinds.AnimalTamed, 0, 1, dragon, 0, 0, 1, 1))!.Contains("tamed by"), "feed: taming");
