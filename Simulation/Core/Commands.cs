@@ -78,6 +78,12 @@ public static class EventKinds
     public const int SkillLevelUp = 220;
     /// <summary>Actor = reader, Target = book key, Reason = 1 if finished, Amount = pages credited (new pages only).</summary>
     public const int ReadProgress = 221;
+    /// <summary>Actor = caster, Target = target, Reason = Spell, Amount = mana cost (Firebolt) or health restored (Heal).</summary>
+    public const int SpellCast = 222;
+    /// <summary>Actor = feeder, Target = animal, Reason = 1 accepted / 0 refused, Amount = trust after the feed.</summary>
+    public const int TameFed = 223;
+    /// <summary>Durable milestone. Actor = feeder, Target = animal, Reason = settlement id, Amount = species.</summary>
+    public const int AnimalTamed = 224;
     /// <summary>Actor = EntityId, Target = threat id (Flee), X/Y = position, Reason = <see cref="ActionKind"/>.</summary>
     public const int ActionStarted = 300;
     /// <summary>Actor = EntityId, Reason = <see cref="ActionKind"/> whose path search found nothing reachable.</summary>

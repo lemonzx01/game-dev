@@ -70,7 +70,7 @@ internal static class T009Tests
 
     private static void Catalog()
     {
-        Check(Default.Count == 6 && Default.Values.Count(d => d.Faction == Faction.None) == 4, "4 animal species (+ 2 sapient peoples since T015)");
+        Check(Default.Count == 7 && Default.Values.Count(d => d.Faction == Faction.None) == 5, "4 animal species + dragon (T019) + 2 sapient peoples (T015)");
         Check(Default.Values.Any(d => d.Domestic) && Default.Values.Any(d => !d.Domestic && d.Diet == Diet.Herbivore), "farm and wild animals");
         Check(Default[Wolf].Diet == Diet.Carnivore && Default[Wolf].Hunts.Length == 3, "predator");
         string dir = AppContext.BaseDirectory;

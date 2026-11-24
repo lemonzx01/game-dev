@@ -25,6 +25,10 @@ internal sealed class EntityState
     public readonly long[] Skills = new long[6];             // XP per Skill (index = Skill − 1)
     public readonly List<ReadingProgress> Reading = new();   // pages read per book
     public long ReadingBook, ReadingSince;                   // open reading session (0 = none)
+    public long Mana, ManaTick;                              // T019 mana anchor (regenerates with elapsed ticks)
+    public int TamedTo;                                      // settlement that tamed this animal (0 = wild)
+    public long TamerId;                                     // who is building trust with this animal
+    public int Trust;                                        // trust toward TamerId
     public long BirthTick;
     public VitalsAnchor Vitals;
     public long ScheduledDeathTick = long.MaxValue; // only the item due at this tick is live; older items are stale
@@ -58,6 +62,8 @@ public sealed partial class SimulationWorld
             BirthTick = born ? now : now - maturity, MotherId = mother, FatherId = father,
             Vitals = new VitalsAnchor(now, 0, 0, VitalsConfig.MaxHealth),
         };
+        entity.ManaTick = now;
+        if (IsSapient(sd)) entity.Mana = MaxMana(entity); // people start rested; mana then follows its anchor
         entities.Add(entity); // IDs are monotonic, so the list stays sorted by ID
         JoinSettlement(entity);
         grid.Add(id.Value, x, y);
@@ -252,6 +258,7 @@ public sealed partial class SimulationWorld
             writer.Write(e.TradePartner);
             writer.Write(e.OnTrip);
             WriteSkills(writer, e);
+            WriteAdventure(writer, e);
         }
         writer.Write((uint)deaths.Count);
         foreach (var r in deaths)

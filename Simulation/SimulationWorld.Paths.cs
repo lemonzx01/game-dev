@@ -25,7 +25,7 @@ public sealed partial class SimulationWorld
     }
 
     private bool OnCooldown(in MindState m, ActionKind kind, long now) =>
-        (kind switch { ActionKind.Eat => m.NoFoodUntil, ActionKind.Work or ActionKind.Read => m.NoWorkUntil, _ => m.NoWaterUntil }) > now;
+        (kind switch { ActionKind.Eat => m.NoFoodUntil, ActionKind.Work or ActionKind.Read or ActionKind.Tame => m.NoWorkUntil, _ => m.NoWaterUntil }) > now;
 
     private void ProcessPaths(long now)
     {

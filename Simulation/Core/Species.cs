@@ -16,7 +16,8 @@ public enum Diet { Herbivore = 1, Carnivore = 2, Omnivore = 3 }
 public sealed record SpeciesDef(int Key, string Name, Diet Diet, bool Domestic, int MoveTicksPerTile, int MeatYield,
     long AttackDamage, int LeashRadius, ImmutableArray<int> Fears, ImmutableArray<int> Hunts,
     long MaturityTicks = 0, long LifespanTicks = 0, int GestationTicks = 0, int ReproCooldownTicks = 0,
-    int LitterSize = 0, int LocalDensityCap = 0, long BirthHungerCost = 0, Faction Faction = Faction.None);
+    int LitterSize = 0, int LocalDensityCap = 0, long BirthHungerCost = 0, Faction Faction = Faction.None,
+    int DamageTakenPercent = 100, bool Retaliates = false, int TameTrust = 0);
 
 /// <summary>Carcass decay and hunting tuning (ticks). Defaults are provisional.</summary>
 public sealed record EcologyConfig(int CarcassDecayTicks, int AttackIntervalTicks, int HuntGiveUpTicks, int HuntCooldownTicks,
@@ -37,7 +38,7 @@ public sealed record EcologyConfig(int CarcassDecayTicks, int AttackIntervalTick
 
 public static class SpeciesCatalog
 {
-    public const int Deer = 1, Sheep = 2, Rabbit = 3, Wolf = 4, Human = 5, Demon = 6;
+    public const int Deer = 1, Sheep = 2, Rabbit = 3, Wolf = 4, Human = 5, Demon = 6, Dragon = 7;
 
     /// <summary>Starter roster: wild herbivores (deer, rabbit), a farm animal (sheep) and a predator (wolf).</summary>
     private const long Day = 2400; // ticks at the default calendar
@@ -45,13 +46,16 @@ public static class SpeciesCatalog
     /// <summary>Life-cycle numbers are provisional balance values (GDD open decision: reproduction rates).</summary>
     public static ImmutableSortedDictionary<int, SpeciesDef> Default { get; } = Build(
     [
-        new SpeciesDef(Deer, "Deer", Diet.Herbivore, false, 2, 8, 0, 0, [Wolf], [], 6 * Day, 60 * Day, (int)(3 * Day), (int)(6 * Day), 1, 6, 200_000),
-        new SpeciesDef(Sheep, "Sheep", Diet.Herbivore, true, 2, 6, 0, 6, [Wolf], [], 6 * Day, 60 * Day, (int)(3 * Day), (int)(6 * Day), 1, 8, 200_000),
-        new SpeciesDef(Rabbit, "Rabbit", Diet.Herbivore, false, 1, 2, 0, 0, [Wolf], [], 2 * Day, 20 * Day, (int)(1 * Day), (int)(2 * Day), 2, 8, 100_000),
-        new SpeciesDef(Wolf, "Wolf", Diet.Carnivore, false, 1, 5, 400_000, 0, [], [Deer, Sheep, Rabbit], 8 * Day, 70 * Day, (int)(3 * Day), (int)(10 * Day), 2, 3, 250_000),
+        new SpeciesDef(Deer, "Deer", Diet.Herbivore, false, 2, 8, 0, 0, [Wolf, Dragon], [], 6 * Day, 60 * Day, (int)(3 * Day), (int)(6 * Day), 1, 6, 200_000, TameTrust: 60),
+        new SpeciesDef(Sheep, "Sheep", Diet.Herbivore, true, 2, 6, 0, 6, [Wolf, Dragon], [], 6 * Day, 60 * Day, (int)(3 * Day), (int)(6 * Day), 1, 8, 200_000),
+        new SpeciesDef(Rabbit, "Rabbit", Diet.Herbivore, false, 1, 2, 0, 0, [Wolf, Dragon], [], 2 * Day, 20 * Day, (int)(1 * Day), (int)(2 * Day), 2, 8, 100_000, TameTrust: 40),
+        new SpeciesDef(Wolf, "Wolf", Diet.Carnivore, false, 1, 5, 400_000, 0, [Dragon], [Deer, Sheep, Rabbit], 8 * Day, 70 * Day, (int)(3 * Day), (int)(10 * Day), 2, 3, 250_000, TameTrust: 100),
         // Sapient peoples (T015): identical numbers on purpose; neither is good or evil by rule.
-        new SpeciesDef(Human, "Human", Diet.Omnivore, false, 2, 10, 0, 0, [Wolf], [], 16 * Day, 200 * Day, (int)(6 * Day), (int)(12 * Day), 1, 30, 250_000, Faction.Human),
-        new SpeciesDef(Demon, "Demon", Diet.Omnivore, false, 2, 10, 0, 0, [Wolf], [], 16 * Day, 200 * Day, (int)(6 * Day), (int)(12 * Day), 1, 30, 250_000, Faction.Demon),
+        new SpeciesDef(Human, "Human", Diet.Omnivore, false, 2, 10, 0, 0, [Wolf, Dragon], [], 16 * Day, 200 * Day, (int)(6 * Day), (int)(12 * Day), 1, 30, 250_000, Faction.Human),
+        new SpeciesDef(Demon, "Demon", Diet.Omnivore, false, 2, 10, 0, 0, [Wolf, Dragon], [], 16 * Day, 200 * Day, (int)(6 * Day), (int)(12 * Day), 1, 30, 250_000, Faction.Demon),
+        // A real dragon (T019): rare, long-lived, armoured, takes large game, fights back when hurt; does not breed yet.
+        new SpeciesDef(Dragon, "Dragon", Diet.Carnivore, false, 1, 60, 700_000, 0, [], [Deer, Sheep, Wolf], 40 * Day, 2000 * Day,
+            DamageTakenPercent: 25, Retaliates: true, TameTrust: 300),
     ]);
 
     public static ImmutableSortedDictionary<int, SpeciesDef> Build(IEnumerable<SpeciesDef> defs)
@@ -86,6 +90,10 @@ public static class SpeciesCatalog
             ArgumentOutOfRangeException.ThrowIfNegative(d.LitterSize);
             ArgumentOutOfRangeException.ThrowIfNegative(d.ReproCooldownTicks);
             ArgumentOutOfRangeException.ThrowIfNegative(d.BirthHungerCost);
+            ArgumentOutOfRangeException.ThrowIfLessThan(d.DamageTakenPercent, 1);
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(d.DamageTakenPercent, 1000);
+            ArgumentOutOfRangeException.ThrowIfNegative(d.TameTrust);
+            if (d.TameTrust > 0 && d.Faction != Faction.None) throw new ArgumentException($"People ({key}) cannot be tamed.");
             if (d.LifespanTicks > 0 && d.LifespanTicks <= d.MaturityTicks) throw new ArgumentException($"Species {key} must live past maturity.");
             if (d.LitterSize > 0 && (d.LifespanTicks == 0 || d.GestationTicks < 1 || d.LocalDensityCap < 1))
                 throw new ArgumentException($"Breeding species {key} needs a lifespan, gestation ≥ 1 and a density cap ≥ 1.");
@@ -127,6 +135,9 @@ public static class SpeciesCatalog
             w.Write(d.LocalDensityCap);
             w.Write(d.BirthHungerCost);
             w.Write((int)d.Faction);
+            w.Write(d.DamageTakenPercent);
+            w.Write(d.Retaliates);
+            w.Write(d.TameTrust);
             foreach (var list in new[] { d.Fears, d.Hunts })
             {
                 var sorted = list.Sort();
