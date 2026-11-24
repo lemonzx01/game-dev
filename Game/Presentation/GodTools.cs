@@ -38,6 +38,7 @@ public partial class GodTools : Node2D
         bridge = GetNode<SimulationBridge>(BridgePath);
         feed = GetNodeOrNull<EventFeed>(FeedPath);
         label = GetNodeOrNull<Label>(LabelPath);
+        if (label is not null) UiStyle.Panel(label, 14);
         UpdateLabel();
     }
 

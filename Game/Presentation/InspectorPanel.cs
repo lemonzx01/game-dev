@@ -22,6 +22,7 @@ public partial class InspectorPanel : Label
     {
         bridge = GetNode<SimulationBridge>(BridgePath);
         observer = GetNode<ObserverController>(ObserverPath);
+        UiStyle.Panel(this, 14);
     }
 
     public override void _Process(double delta)
@@ -34,7 +35,7 @@ public partial class InspectorPanel : Label
 
     public string Describe(long id)
     {
-        if (id == 0) return "Click an animal to inspect it. Space: pause  .: step  1-4: speed  F: follow  Esc: clear";
+        if (id == 0) return "Click a creature to inspect it\nSpace pause · . step · 1-4 speed · F follow · G god · F3 debug";
         var d = bridge.Details(id);
         if (d is null) return $"#{id}: unknown";
         var sb = new StringBuilder();
