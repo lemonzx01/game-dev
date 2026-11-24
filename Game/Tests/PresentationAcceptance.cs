@@ -15,6 +15,7 @@ public partial class PresentationAcceptance : Node
         {
             var scene = GD.Load<PackedScene>("res://Presentation/Main.tscn");
             var world = scene.Instantiate();
+            world.GetNode<SimulationBridge>("SimulationBridge").StarterAnimals = 0; // T007 checks one entity
             AddChild(world);
             var bridge = world.GetNode<SimulationBridge>("SimulationBridge");
             bridge._Process(0.1);
@@ -26,13 +27,15 @@ public partial class PresentationAcceptance : Node
             var camera = world.GetNode<CameraController>("Camera2D");
             camera.Position += new Vector2(40, 70);
             using var wheel = new InputEventMouseButton { Pressed = true, ButtonIndex = MouseButton.WheelUp };
+            float zoomBefore = camera.Zoom.X; // T008 starts zoomed out to fit the map
             camera._UnhandledInput(wheel);
-            if (camera.Zoom.X <= 1 || firstHash != bridge.StateHash())
+            if (camera.Zoom.X <= zoomBefore || firstHash != bridge.StateHash())
                 throw new Exception("Camera input independence failed");
             bridge._Process(0);
             if (!bridge.EventsThisFrame.IsEmpty || bridge.EventCursor != 1)
                 throw new Exception("Repeated events");
             var control = scene.Instantiate();
+            control.GetNode<SimulationBridge>("SimulationBridge").StarterAnimals = 0;
             AddChild(control);
             var reference = control.GetNode<SimulationBridge>("SimulationBridge");
             reference._Process(0.4);
