@@ -2,11 +2,23 @@
 
 ## Current state
 
-**T001 DONE · A007 revision 2 Accepted · `T002` commit `48bb41f` รอตรวจ runtime verification ใน `T001-review/` · Multi-agent coordination (`docs/MULTI_AGENT_WORKFLOW.md`, `scripts/agent-status.ps1`, `TASKS.md` Active Claims) พร้อมใช้งานแล้วบน `chore/multi-agent-workflow` · `T007 = BLOCKED` (รอ `T002`/`T003`)**
+T001 DONE · T002 DONE · A007 revision 2 Accepted · A008: no fixed AI roles (AGENTS.md) · main now holds T002 + Sandbox/N3 + shared workflow docs · T003 REVIEW on `feat/T003-world-clock` (16/16 test groups, waiting for independent review) · T007 can start once T003 merges.
 
-ข้อกำหนดที่ยกไปจากรีวิว: N1+N4 → T003, N2 → T013, N3 → DONE (Antigravity presentation prep), acceptance tests 9 ข้อ → T002 (รอ runtime test ใน terminal ปกติ)
+ข้อกำหนดที่ยกไปจากรีวิว: N1+N4 → T003 (implemented on feat/T003-world-clock), N2 → T013, N3 → DONE.
 
 ## Handoff log
+
+**2026-11-24 | Claude Code (owner-requested) | Integrate into main | main | merge**
+
+- Fast-forward `main` → `chore/multi-agent-workflow` (includes `prep/N3-presentation-contract-sync`), then merge `feat/T002-simulation-foundation` (T002 + A008) from the `T001-review` clone.
+- Conflicts resolved: TASKS.md uses the A008 table (no owner column, no Active Claims table; claims = branch + docs/handoffs) with N3 DONE and T003 REVIEW; PROGRESS.md keeps every handoff entry from both sides. docs/MULTI_AGENT_WORKFLOW.md and scripts/agent-status.ps1 read claims from docs/handoffs instead of the removed table.
+- Not pushed. Sandbox `.godot/` build cache was unstaged (ignored by Sandbox/.gitignore), not committed.
+
+**2026-11-24 | Claude Code (owner-requested) | Process A008 | feat/T002-simulation-foundation | role removal**
+
+- ยกเลิกการแบ่งบทบาท AI ตามคำสั่งเจ้าของ: แก้ AGENTS.md, CLAUDE.md, ANTIGRAVITY.md, START_HERE.md, README.md, TASKS.md (ลบคอลัมน์ Default owner), ROADMAP.md, ARCHITECTURE.md §3 heading และเพิ่ม A008 ใน docs/DECISIONS.md รายการประวัติเดิมใน PROGRESS/DECISIONS ไม่แก้
+- ตรวจ agent-orchestrator: 4 session ใน `~/.local/share/agent-orchestrator/platform.sqlite3` อยู่ในสถานะ COMPLETED/STOPPED ไม่มี session ที่แจกงานอยู่ ลบ worktree/branch `orch/*` ที่ว่าง (ไม่มีไฟล์แก้และ commit อยู่ใน HEAD แล้ว) 7 ชุด: T002, T003, T004, T005, T006, T009, T010 เก็บ 4 ชุดที่มีงานยังไม่ commit ไว้: `orch/T007-claude-…` (Game/ project), `orch/SUB-T007-N3-…` (PRESENTATION_PLAN.md), `orch/SUB-T013-SCHEMA-…` (SAVE_SCHEMA_DRAFT.md), `orch/SUB-T006-MOCK-…` (MOCK_SCENARIOS.md)
+- หมายเหตุ: orchestrator DB บันทึก T003 เป็น DONE แต่ worktree ไม่มีไฟล์เปลี่ยนเลย ถือว่า T003 ยังไม่ได้ทำ
 
 **2026-11-24 | Google Antigravity | Multi-Agent Shared Workflow + Status Board | chore/multi-agent-workflow | REVIEW / READY TO MERGE**
 
@@ -27,6 +39,21 @@
   - คอมไพล์ `PresentationTest.csproj` (`net8.0`, `Godot.NET.Sdk/4.7.2`) ด้วย System `dotnet 10.0.404` (`global.json`) `-c Release` ผ่าน `0 Warning(s), 0 Error(s)` และรัน `godot-mono.exe --headless --path Sandbox/PresentationTest -- --run-sandbox-tests` → **`[SANDBOX_TESTS_PASSED]`**
 - **งานที่ยัง BLOCKED:** `T007` (Production `Game/` bridge กับ `ISimulation`) ยัง `BLOCKED` จนกว่า `Codex` จะสร้าง `Simulation/Simulation.csproj` (`T002`/`T003`)
 - **Exact next step:** รอ `Codex` ดำเนินการ `T002` และ `T003` จากนั้น merge/sync branch แล้วเริ่ม `T007` บน `feat/T007-godot-presentation`
+
+**2026-11-24 | Antigravity (Coordinator) | T002 DONE | feat/T002-simulation-foundation | runtime verification**
+
+- ตรวจรับ T002 ครบตามเกณฑ์ 9 ข้อใน TASKS.md และตรวจสอบ Source Code (`Simulation/Determinism.cs`, `Tests/Simulation.Tests/Program.cs`) ตรงกับ Release build ปัจจุบัน (`Simulation.dll`, `Headless.dll`, `Simulation.Tests.dll`)
+- ผลรันจริงบน Windows Host โดยเจ้าของโปรเจกต์: `dotnet run --project ./Tests/Simulation.Tests -c Release --no-build` → Exit Code `0`, ผ่าน `7/7 T002 test groups passed` (`Pure simulation assembly`, `A007 RNG vector`, `Monotonic identity and checked exhaustion`, `Stable canonical hash and process replay`, `Paged events and explicit gap`, `Owner-thread and re-entry guards`, `Snapshot lifetime`)
+- สถานะ: เปลี่ยน T002 เป็น `DONE`; งาน `T003` พร้อมเริ่ม และสามารถแตกงานอิสระคู่ขนานสำหรับ `T007` (N3 / UI prototype), `T013` (Save schema draft), และ `T006` (Mock/Benchmark specs) ได้โดยไม่ข้าม Mandatory Dependencies
+
+**2026-11-24 | Codex | T002 | feat/T002-simulation-foundation | runtime verification**
+
+- T001 commit 9648887 ต่อจาก 58c398e ใช้ Scoop Godot เท่านั้น ผู้ใช้ยืนยันใน Terminal ของเครื่องว่า Editor เปิด obj/toolchain-check/Game โดยไม่มี error หลังจาก Codex build C# ผ่าน การเปิด headless editor ใน Codex พบ Assemblies not found ทั้งจาก junction และ path 4.7.2; ตรวจ DLL/ไฟล์ใน Api/Debug และ Tools เทียบกับ Scoop cache 71 รายการตรงกัน
+- Simulation/ เก็บ fixed tick, A007 interface, typed IDs, SplitMix64, canonical SHA-256, paged bounded event log, snapshot cache และ owner guard ส่วน Tests/Headless และ Tests/Simulation.Tests เป็น runner และ offline acceptance suite ตาม docs/TESTING.md
+- เกณฑ์ 1 ผ่าน: SDK 10.0.404, Godot 4.7.2.stable.mono.official.ed1daf0bf เกณฑ์ 2 ผ่าน: dotnet build Simulation/Simulation.csproj -c Release และ dotnet build Tests/Simulation.Tests -c Release --no-restore -m:1 ผ่านทั้ง 3 โปรเจกต์ 0 warnings / 0 errors ตรวจ dotnet list package --include-transitive ไม่มี package และ PEReader ของ Release Simulation.dll พบเฉพาะ System.* ไม่มี GodotSharp
+- รัน dotnet test Tests/Simulation.Tests -c Release --no-restore -m:1 จริงใน Codex: test runner เปิดได้, 0/7 กลุ่มผ่าน, 7/7 ล้มเหลวจาก Windows Application Control 0x800711C7 เมื่อโหลด Simulation.dll (MSB3073 exit 1) ยังยืนยันผล behavioral tests จากรอบนี้ไม่ได้ แยกจากผล build และการตรวจ metadata ข้างต้น
+- ค่าอ้างอิงสำหรับข้อ 7 จาก Python struct.pack little-endian + SHA-256: seed=42, WorldId=1, streams=1,2,3, tick=1 ได้ 480C1B5668F5FF4B9A67A359E6AD9235F00C688E7CBC86E16A7FC94C09805D4B ไม่ใช้ผล Python แทน replay ของ C#
+- ขั้นยืนยันใน Terminal ปกติ: dotnet test Tests/Simulation.Tests -c Release -m:1 ต้องเห็นผลจริงทุกกลุ่มก่อนส่ง Claude ตรวจเฉพาะ diff T002 T003 ยัง TODO ไม่มีการ push หรือ merge
 
 **2026-11-24 | Codex | T001 DONE | feat/T001-simulation-contract | base 58c398e**
 

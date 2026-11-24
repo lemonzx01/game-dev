@@ -26,7 +26,7 @@ This is a proposed layout, not an assertion that files already exist. Keep Simul
 
 Proposed components: Identity, Transform, Vitals, LifeStage, Species, Needs, Personality, Emotions, Mind/CurrentAction, Inventory, SkillProgress, SocialLinks, SettlementMembership. Store sparse memory and relationships separately. Species definitions data-driven; all IDs validated. World resources have nonnegative amounts and explicit producers/consumers.
 
-## 3. Contract between Codex and Antigravity
+## 3. Contract between Simulation and Presentation
 
 A007 revision 2 (Accepted by owner 2026-11-24; frozen — changes require a new ADR). Simulation/Simulation.csproj owns the plain C# interface and DTOs. Game/Game.csproj, Tests/Headless and Tests/Simulation.Tests reference Simulation. Game/project.godot roots the presentation project. Each project compiles its own sources. One ISimulation owns one WorldId. The same API serves a headless host and Game/Integration.
 

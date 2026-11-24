@@ -48,23 +48,17 @@ if (Test-Path (Join-Path $legacyReview ".git")) {
 Write-Host "`n[3] All Local Branches (Any feat/Txxx-* here means claimed/in-progress)" -ForegroundColor Yellow
 & $git -C $repoRoot branch -vv
 
+$handoffDir = Join-Path $repoRoot "docs\handoffs"
+Write-Host "`n[4] Claims (docs/handoffs/*.md on this checkout; task branches carry their own)" -ForegroundColor Yellow
+if (Test-Path $handoffDir) {
+    Get-ChildItem $handoffDir -Filter *.md | Where-Object Name -ne "README.md" | ForEach-Object {
+        $state = (Get-Content -Encoding UTF8 $_.FullName | Select-String -Pattern "IN_PROGRESS|REVIEW|BLOCKED|HANDOFF_READY|DONE" | Select-Object -First 1)
+        Write-Host ("  - {0,-20} {1}" -f $_.BaseName, $(if ($state) { $state.Line.Trim() } else { "(no state line)" }))
+    }
+}
+
 $tasksFile = Join-Path $repoRoot "TASKS.md"
 if (Test-Path $tasksFile) {
-    Write-Host "`n[4] Active Claims & Task Summary (from TASKS.md)" -ForegroundColor Yellow
-    $lines = Get-Content -Encoding UTF8 $tasksFile
-    $inClaims = $false
-    $inBacklog = $false
-    foreach ($l in $lines) {
-        if ($l -match "^## Active Claims") { $inClaims = $true; $inBacklog = $false; Write-Host "  $l"; continue }
-        if ($l -match "^## Task Backlog") { $inClaims = $false; $inBacklog = $true; continue }
-        if ($l -match "^## ") { $inClaims = $false; $inBacklog = $false }
-        if ($inClaims) { Write-Host "  $l" }
-    }
-    Write-Host "`n  Task Backlog:" -ForegroundColor Yellow
-    $inBacklog = $false
-    foreach ($l in $lines) {
-        if ($l -match "^## Task Backlog") { $inBacklog = $true; continue }
-        if ($inBacklog -and $l -match "^## ") { break }
-        if ($inBacklog -and $l -match "^\| (T\d+|ID)") { Write-Host "  $l" }
-    }
+    Write-Host "`n[5] Task table (TASKS.md)" -ForegroundColor Yellow
+    Get-Content -Encoding UTF8 $tasksFile | Where-Object { $_ -match "^\| (T\d+|ID) " } | ForEach-Object { Write-Host "  $_" }
 }

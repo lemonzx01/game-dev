@@ -31,7 +31,7 @@ Task acceptance in TASKS met with actual test/build evidence; no unrelated edits
 
 **รันได้ใน T001** ตรวจหัวข้อหลัก 1–10 เรียงลำดับและไม่ซ้ำ, interface เดียว, การแยก snapshot/events, ฟิลด์ save, สถานะ task, absence of project manifests, การ ignore checkout ซ้อน และผลของเครื่องมือ ดูผลรอบนี้ใน PROGRESS.md ตัวอย่างอ้างอิง RNG สำหรับ seed=42, systemTag=2, scopeId=17 ให้ค่าเริ่ม a95b939b9ebb349a และสอง draw แรก 5fb88fd6df7259e5, b8b82154685001e7 (hex 64-bit) คำนวณด้วย Python สอง process เพื่อให้ผู้เขียน C# มีค่าเทียบ
 
-**รอ implementation — ทุกแถวด้านล่างเป็น NOT RUN** เริ่มรันเฉพาะ fixture ที่รองรับเมื่อมี T002 ส่วน test ที่ต้องใช้พฤติกรรมจริงให้รันซ้ำในงานเจ้าของระบบ
+**แผนทดสอบ ณ T001 (ผลรันล่าสุดของ T002 ดู PROGRESS.md)** เริ่มรันเฉพาะ fixture ที่รองรับเมื่อมี T002 ส่วน test ที่ต้องใช้พฤติกรรมจริงให้รันซ้ำในงานเจ้าของระบบ
 
 | Ref | Fixture และการกระทำ | ผลที่ต้องตรวจ | งานที่มี dependency |
 |---|---|---|---|
@@ -44,3 +44,28 @@ Task acceptance in TASKS met with actual test/build evidence; no unrelated edits
 | M2/M3 | รัน headless สอง process ด้วย seed/config/target ticks เดียวกัน ให้ host ฝั่งหนึ่ง sleep เปลี่ยนกล้องและสลับลำดับ insert/remove ใน hash collection; ให้ backlog เกิน budget | state/event hash ตรงกันทุก tick, RNG ตรง test vector, จำนวนงานไม่เกิน budget, งานที่ค้างเดินต่อในลำดับเดิม | T002 RNG, T003/T006 scheduler/path |
 | M4 | replay admissions เดิมผ่าน main-thread host และ dedicated-owner prototype พร้อม reader ที่ช้ากว่า; โหลดโลกกลางคิว | ผลตรงตาม tick, อ่านภาพไม่ฉีก, ไม่มีข้อมูลจากโลกเก่าหลัง load หรือการแตะ SceneTree จาก worker | T007 หรือเมื่อ profiling รองรับ prototype |
 | M5 | ให้หนึ่ง entity มี memory 65 และ relationship 33 รายการ, บังคับคะแนนเสมอ; สร้าง milestone เกิน 256 แล้วโหลดซ้ำ | เหลือ 64/32 ตาม tie-break; milestone แรกและ death summary ยังอ่านจาก archive ได้; NPC ไม่ได้รับความรู้เพิ่มเพราะ UI อ่าน | T010/T013 |
+
+## T002 foundation suite
+
+รันจาก root ของ checkout ที่มี global.json โดยใช้ SDK 10.0.404 และ Windows desktop target net8.0
+
+```powershell
+dotnet --list-sdks
+godot-mono --version
+dotnet build Simulation/Simulation.csproj -c Release
+dotnet list Simulation/Simulation.csproj package --include-transitive --no-restore
+dotnet test Tests/Simulation.Tests -c Release -m:1
+dotnet Tests/Headless/bin/Release/net8.0/Headless.dll 42 100
+```
+
+ชุดทดสอบเป็น console executable แบบไม่ต้องเพิ่ม NuGet test adapter โดย target RunAcceptanceSuite ของ dotnet test จะ build และรันทั้ง 7 กลุ่ม คืน exit code 1 เมื่อกลุ่มใดล้มเหลว เกณฑ์ตรวจเครื่องมือและ dependency ใช้คำสั่งด้านบนด้วย ทุกกลุ่มต้อง PASS และต้องเห็นบรรทัด 7/7 ก่อนส่งตรวจ
+
+| เกณฑ์ใน TASKS | หลักฐาน |
+|---|---|
+| 1–2 | เวอร์ชันจริง, build ไลบรารีแยก, transitive packages และตรวจ AssemblyRef |
+| 3–5 | exit code ของชุดทดสอบ, RNG known-answer, เลิกใช้ ID ใน fixture แล้ว allocate ใหม่และทดสอบ overflow |
+| 6–7 | รัน Headless สอง process ด้วย seed 42 เทียบ 100 tick ทุกบรรทัด ฝั่งที่สองหน่วงเวลาและเปลี่ยนการ insert/remove; เปลี่ยน seed เป็น 43 ต้องต่าง ตรวจ tick แรกกับ SHA-256 ที่คำนวณอย่างอิสระจาก canonical bytes |
+| 8–9 | อ่าน 50 events หน้าละ 7, capacity=4, range และ cursor; ตรวจทุก API จาก thread อื่นและระหว่าง Step ว่า throw ก่อนเปลี่ยน hash |
+| เสริม | เก็บ immutable snapshot ของโลกตั้งต้นข้าม 100 tick และอ่านซ้ำระหว่าง tick |
+
+ใน T002 โลกตั้งต้นยังว่าง แต่ละ Step เดินหนึ่ง tick ปกติ fixture ใช้ phase ภายในเพื่อทดสอบการเผยแพร่ event และ re-entry ภายในขอบเขต Step ส่วนคำสั่งที่แก้โลก, scheduler, entity components, death history และ save/load อยู่ในงานถัดไปตาม TASKS.md

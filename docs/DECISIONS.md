@@ -32,3 +32,9 @@ Claude Code ตรวจลำดับคำสั่ง อายุ snapshot 
 **Re-review 2026-11-24 (Claude Code):** ARCHITECTURE APPROVED สำหรับ revision 2 — เงื่อนไข N1 (ผลคำสั่งถูก evict ใน tick ที่มี event เกิน capacity → T003) และ N2 (archive ต้องผูกกับ timeline ของ save → T013) รายละเอียดใน PROGRESS.md รอเจ้าของเปลี่ยนสถานะเป็น Accepted
 **Owner approval 2026-11-24:** เจ้าของรับรอง A007 revision 2 เป็น Accepted สัญญาใน ARCHITECTURE.md §3–4, §8–9 ถือเป็น frozen contract การเปลี่ยนต่อจากนี้ต้องทำ ADR ใหม่ เงื่อนไข N1 (T003) และ N2 (T013) ยังต้องปิดตามที่ระบุ
 ข้อกำหนดที่ยกไป: N1, N4 → T003; N2 → T013; N3 → Antigravity ก่อน T007; acceptance tests 9 ข้อ → T002 (TASKS.md) T001 ยัง BLOCKED (environment)
+
+## A008 · 2026-11-24 · Accepted (owner) · Process
+**Decision:** ยกเลิกการแบ่งบทบาท AI เดิม Codex, Claude Code และ Google Antigravity เป็นนักพัฒนาเท่าเทียมกัน ทำได้ทุกงาน (Simulation, Godot, UI/UX, tests, review, bugfix, performance, takeover) ผู้ใช้เป็นผู้ควบคุมและเปิด AI แต่ละตัวเอง ไม่มี orchestrator / dashboard / การแจกงานอัตโนมัติ / การสั่งงาน AI อื่นผ่าน MCP
+**Kept:** Game Design และ A007 rev 2 (frozen), acceptance criteria, automated/regression tests, branch/worktree ต่องาน, ห้ามแก้ไฟล์เดียวกันพร้อมกัน, handoff, ผู้ใช้ (หรือผู้ที่ผู้ใช้มอบหมาย) รวม TASKS.md / PROGRESS.md, งานที่ต้อง review ต้องใช้ reviewer ที่ไม่ใช่ผู้เขียน
+**Claim mechanism:** branch `feat/<TASK_ID>-<slug>` + `docs/handoffs/<TASK_ID>.md` (IN_PROGRESS) ดู AGENTS.md Workflow 1–2
+**Supersedes:** "Team ownership" เดิมใน AGENTS.md, Role ใน CLAUDE.md / ANTIGRAVITY.md, prompt แยกบทบาทใน START_HERE.md, คอลัมน์ Default owner ใน TASKS.md การมอบ N3 ให้ Antigravity ใน A007 ข้างบนเป็นบันทึกประวัติ ปัจจุบัน N3 ทำโดย AI ใดก็ได้ก่อน T007

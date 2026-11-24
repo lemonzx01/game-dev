@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <UseAppHost>false</UseAppHost>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../Simulation/Simulation.csproj" />
+    <ProjectReference Include="../Headless/Headless.csproj" />
+  </ItemGroup>
+  <!-- Offline acceptance suite. A failure in the executable fails dotnet test. -->
+  <Target Name="RunAcceptanceSuite" BeforeTargets="VSTest" DependsOnTargets="Build">
+    <Exec Command="dotnet &quot;$(TargetPath)&quot;" />
+  </Target>
+</Project>
