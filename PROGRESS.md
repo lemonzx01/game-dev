@@ -6,6 +6,15 @@ T001–T014 DONE and merged to main (2026-11-24; T003–T014 merged by owner ins
 
 ## Handoff log
 
+**2026-11-25 | Google Antigravity | FIX-R2 review fixes for T019 (simulation) | main | merged (self-reviewed, A009)**
+
+- Fixed T019 simulation review findings `1–9, 14, 15-sim` from `docs/reviews/2026-11-codex-review-T019.md` on `fix/R2-review-T019` (`Simulation/**`, `Tests/**`, `docs/handoffs/FIX-R2.md` only; zero `Game/**`, `tools/**`, `Assets/**`, or `Data/**` edits; `ReadAdventure` signature unchanged; shared helpers `CanCastFirebolt`/`CastFirebolt`, `CanHeal`/`CastHeal`, `CanHunt`, `IsEligibleFeeder`/`CanFeedAnimal`/`Feed`, and `Attack`/`Hurt` extracted for T020 reuse):
+  - **High (#1–#2):** `HuntStep` re-checks `CanHunt` before movement/fatigue/damage/XP; `Load` validates `ManaTick` bounds, species `TameTrust` limits, and `TamerId` allocation (living or archived dead feeder).
+  - **Medium (#3–#9, #13 Open):** Revalidated concurrent feeder claims (`TameStep`/`Feed`), added expiring `TameAttemptUntil` (`Schema 15`) preserving completed durable bonds, charged `FatiguePerAttack` on `Heal`, widened `Damage`/`ManaAt`/`Feed` arithmetic against signed overflow, enforced town-radius animal leashes across `Wander`/`Chase`/`Flee`/`Eat`/`Drink` + deterministic `ReturnHomeStep`, and added `CandidateVisitBudgetPerTick = 16384`/`QuerySliceBudget = 256`, resumable `ScanPhase` cursors, per-tick query cache, and zero-allocation `SpatialGrid.IGridVisitor` scans. Finding `#13` (architectural 256-milestone archive cap per `ARCHITECTURE.md §9`) left **Open** with concrete design proposal in `docs/handoffs/FIX-R2.md`.
+  - **Low (#14, #15-sim):** Strengthened `T019Tests` (`Dragon`, `Magic`, `SaveMidAction`) and added `FixR2Tests #14/#15` proving sequence-ordered retaliation, pre-save partial bond & active combat replay, exact Firebolt/Heal costs, and rejected targets causing zero debit/hit.
+- StateSchema bumped `14 -> 15` (`1 6169E3B9DB1C72B55C0C7F35FAEC8177A21797E8121BB03010FA8A5C33BF9F9F`).
+- Merged `fix/R2-review-T019` into `main`: `Simulation.Tests` **112/112** pass; 1,000-entity 3,000-tick benchmark → `p50 0.936 ms, p99 1.912 ms, 26.1 KB/tick` (vs pre-FIX-R2 `~2.6 ms` p99, `88.0 KB/tick`); `Game.csproj` Debug 0 warnings/errors; Godot headless `EffectsAcceptance` (`tick=8`) and `SettlementAcceptance` (`tick=3002`) pass. Handoff `docs/handoffs/FIX-R2.md`.
+
 **2026-11-25 | Claude Code | Owner character art | main | merged (self-reviewed, A009)**
 
 - Owner AI-generated art (4 JPEGs) imported by tools/art/import_owner_art.py into Game/Assets/Art/owner_sheet.png (grid recovery, median per art pixel, magenta key, derived poses); renderer draws people 2 cells tall, guards in the guard sprite, dragon at 2x. All 6 Godot acceptances pass; frames docs/handoffs/owner-art-*.png. Tool/terms of the image generator still to be recorded. Handoff docs/handoffs/owner-art.md.
