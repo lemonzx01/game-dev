@@ -12,7 +12,7 @@
 
 - ติดตั้งตามคำขอเจ้าของ ผ่าน winget จากแหล่งทางการ (winget ตรวจ installer hash ผ่านทั้งคู่):
   - `.NET SDK 10.0.404` (Microsoft.DotNet.SDK.10) → `dotnet --list-sdks` = `10.0.404 [C:\Program Files\dotnet\sdk]`
-  - `Godot 4.7.2 .NET` (GodotEngine.GodotEngine.Mono) — `winget install` ล้มด้วย "Portable package from a different source already exists" จึงใช้ `winget download` (hash ผ่าน) แล้วแตก ZIP เองที่ `%LOCALAPPDATA%\Programs\Godot\Godot_v4.7.2-stable_mono_win64\` ไม่ได้เพิ่มใน PATH; `Godot_v4.7.2-stable_mono_win64_console.exe --version --headless` = `4.7.2.stable.mono.official.ed1daf0bf`
+  - `Godot 4.7.2 .NET` — ใช้ชุดที่ติดตั้งผ่าน Scoop (`godot-mono`) ที่ `%USERPROFILE%\scoop\apps\godot-mono\current\` (shim `godot-mono` อยู่ใน PATH); `godot-mono.console.exe --version --headless` = `4.7.2.stable.mono.official.ed1daf0bf`; ทดสอบ headless `--editor --verbose` พบ `.NET: hostfxr initialized`, `GodotPlugins initialized`, `Found .NET Sdk version 10.0.404` (ยังไม่ได้เปิดหน้าต่าง editor จริง) ชุดที่เคยแตกจาก `winget download` ถูกลบแล้วตามคำขอเจ้าของ
 - หมายเหตุ: รุ่นนี้ต่างจากที่ Codex เสนอ (Godot 4.5.1) เพราะ winget มี 4.7.2 เป็น stable ล่าสุด ให้ยืนยัน TargetFramework จาก project ที่ Godot 4.7.2 สร้างจริงก่อน pin
 - สิ่งที่ยังไม่ทำ: ยังไม่มี .csproj/project.godot จึงยังไม่มี build/test ใด ๆ (NOT RUN) เกณฑ์ "actual build commands" ของ T001 ยังไม่ครบ เจ้าของตัดสินว่าจะปิด T001 หรือย้ายการยืนยัน build ไปเป็นข้อ 1–3 ของ T002
 
