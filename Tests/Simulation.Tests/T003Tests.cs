@@ -252,6 +252,15 @@ internal static class T003Tests
         for (int t = 14; t <= 30; t++) grow.Step();
         Check(Amount() == 5, "stays full");
         Check(grow.StateHash() != full, "tick advanced");
+
+        // Regression (review of 48456c6): regrowth near int.MaxValue must clamp, not wrap negative.
+        var huge = ResourceConfig.Default with { Food = new ResourceRule(int.MaxValue, int.MaxValue, 1) };
+        var big = NewWorld(tweak: o => o with { Resources = huge });
+        var bigFood = FindCell(big, (x, y) => big.ReadResource(x, y, ResourceKind.Food) is not null);
+        big.SubmitCommand(new TakeResourceCommand(W, God, CommandModes.God, bigFood.X, bigFood.Y, ResourceKind.Food, 1));
+        big.Step(); // stock int.MaxValue - 1, regrow due tick 2
+        big.Step();
+        Check(big.ReadResource(bigFood.X, bigFood.Y, ResourceKind.Food)!.Value.Amount == int.MaxValue, "regrowth overflow");
     }
 
     private static void EventFlood()

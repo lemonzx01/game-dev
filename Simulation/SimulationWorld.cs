@@ -228,7 +228,8 @@ public sealed class SimulationWorld : ISimulation
                 int node = (int)item.Subject;
                 ref var stock = ref resources[node];
                 var rule = resources.Config.RuleFor(stock.Kind);
-                stock.Amount = Math.Min(rule.Capacity, stock.Amount + rule.RegrowAmount);
+                // Widen before adding: Amount + RegrowAmount may exceed int.MaxValue for large configured rules.
+                stock.Amount = (int)Math.Min(rule.Capacity, (long)stock.Amount + rule.RegrowAmount);
                 stock.RegrowScheduled = false;
                 ScheduleRegrowth(node, now);
                 break;
