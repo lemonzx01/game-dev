@@ -25,7 +25,7 @@ public partial class MapRenderer : Node2D
 
     private SimulationBridge bridge = null!;
     private ObserverController? observer;
-    private Texture2D terrainAtlas = null!, humanoid = null!, plants = null!, characters = null!;
+    private Texture2D terrainAtlas = null!, humanoid = null!, plants = null!, characters = null!, dragon = null!;
     private ImageTexture terrain = null!;
     private int builtRevision = -1;
     private bool cameraPlaced;
@@ -42,6 +42,7 @@ public partial class MapRenderer : Node2D
         humanoid = GD.Load<Texture2D>("res://Assets/Placeholders/humanoid_modular_32x32_placeholder.png");
         plants = GD.Load<Texture2D>("res://Assets/Art/environment_props.png");
         characters = GD.Load<Texture2D>("res://Assets/Art/characters_24.png");
+        dragon = GD.Load<Texture2D>("res://Assets/Art/dragon_48.png");
         TextureFilter = TextureFilterEnum.Nearest;
         BuildTerrain();
         var map = bridge.Map;
@@ -195,6 +196,7 @@ public partial class MapRenderer : Node2D
 
     // ---- Character animation (presentation only: reads rows, never changes the simulation) ----
     // Sheet Assets/Art/characters_24.png (tools/art/make_characters.py): 24 px frames, columns below, rows per species/variant.
+    private const int DragonFrame = 48, DragonRow = 100;
     private const int Frame = 24, ColIdle = 0, ColWalk = 2, ColWork = 6, ColAttack = 8, ColRead = 10, ColDead = 12;
     private const int HumanRows = 8, DemonRow0 = 8, DemonRows = 4, SheepRow = 12, DeerRow = 13, RabbitRow = 14, WolfRow = 15;
 
@@ -254,6 +256,7 @@ public partial class MapRenderer : Node2D
         SpeciesCatalog.Deer => DeerRow,
         SpeciesCatalog.Rabbit => RabbitRow,
         SpeciesCatalog.Wolf => WolfRow,
+        SpeciesCatalog.Dragon => DragonRow,
         _ => -1,
     };
 
@@ -292,10 +295,14 @@ public partial class MapRenderer : Node2D
             return;
         }
         int col = SheetColumn(row, moving, sheetRow >= SheepRow);
+        // The dragon has its own 48 px sheet (Assets/Art/dragon_48.png, same columns); everyone else uses the 24 px sheet.
+        bool big = sheetRow == DragonRow;
+        int size = big ? DragonFrame : Frame;
+        var (sheet, srcRow) = big ? (dragon, 0) : (characters, sheetRow);
         // Bottom-centred on the cell with feet on its lower edge; mirrored when facing left.
         var origin = new Vector2((at.X + 0.5f) * CellSize, (at.Y + 1) * CellSize + 2);
         DrawSetTransform(origin, 0, new Vector2(m is { Left: true } ? -1 : 1, 1));
-        DrawTextureRectRegion(characters, new Rect2(-Frame / 2, -Frame, Frame, Frame), new Rect2(col * Frame, sheetRow * Frame, Frame, Frame),
+        DrawTextureRectRegion(sheet, new Rect2(-size / 2, -size, size, size), new Rect2(col * size, srcRow * size, size, size),
             dead ? new Color(0.78f, 0.76f, 0.8f, 0.9f) : Colors.White);
         DrawSetTransform(Vector2.Zero, 0, Vector2.One);
     }
