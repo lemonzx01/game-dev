@@ -20,6 +20,7 @@ public sealed record SimulationOptions
     public int DiscretionaryWorkBudget { get; init; } = 256;
     public CalendarConfig Calendar { get; init; } = CalendarConfig.Default;
     public ResourceConfig Resources { get; init; } = ResourceConfig.Default;
+    public VitalsConfig Vitals { get; init; } = VitalsConfig.Default;
     public ImmutableSortedDictionary<long, AuthorityGrant> Grants { get; init; } = ImmutableSortedDictionary<long, AuthorityGrant>.Empty;
     /// <summary>Extra world-scope RNG streams to initialize up front (stream 1 = world generation always exists).</summary>
     public ImmutableArray<uint> PrewarmStreams { get; init; } = [];
@@ -39,6 +40,7 @@ public sealed record SimulationOptions
         ArgumentOutOfRangeException.ThrowIfLessThan(DiscretionaryWorkBudget, 1);
         Calendar.Validate();
         Resources.Validate();
+        Vitals.Validate();
         foreach (var (issuer, grant) in Grants)
         {
             ArgumentOutOfRangeException.ThrowIfLessThan(issuer, 1);

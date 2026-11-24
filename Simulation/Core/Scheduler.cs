@@ -1,6 +1,6 @@
 namespace FantasyWorld.Simulation;
 
-internal enum WorkKind { RegrowResource = 1, TestNoop = 99 }
+internal enum WorkKind { RegrowResource = 1, EntityDeath = 2, TestNoop = 99 }
 
 /// <summary>Ordering key from ARCHITECTURE §4: (due tick, priority, EntityId, enqueue ordinal), all ascending.</summary>
 internal readonly record struct WorkKey(long DueTick, int Priority, long EntityId, long Ordinal) : IComparable<WorkKey>

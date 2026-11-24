@@ -14,7 +14,10 @@ public abstract record GameCommand(WorldId WorldId, long IssuerId, string Mode)
 public sealed record CommandReceipt(string Status, string Reason, long? TargetTick = null, long? CommandSequence = null);
 public readonly record struct EntityRow(EntityId Id, int X, int Y, int VisualKey, int Action, int LifeState);
 public sealed record WorldSnapshot(WorldId WorldId, long Tick, WorldTime Time, ImmutableArray<ImmutableArray<EntityRow>> Chunks);
-public sealed record EntityDetails(WorldId WorldId, EntityId EntityId, long Tick);
+/// <summary>Identity, life state and vitals at <paramref name="Tick"/>; for dead entities DeathTick/DeathCause come from the durable record.</summary>
+public sealed record EntityDetails(WorldId WorldId, EntityId EntityId, long Tick, int LifeState = 0, int SpeciesKey = 0,
+    int X = -1, int Y = -1, long BirthTick = 0, long Hunger = 0, long Thirst = 0, long Health = 0,
+    long? DeathTick = null, DeathCause DeathCause = DeathCause.None);
 
 /// <summary>
 /// One committed event. Command outcome events use Actor = IssuerId, Target = created EntityId (if any),

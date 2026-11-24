@@ -4,7 +4,7 @@ using System.Text;
 
 namespace FantasyWorld.Simulation;
 
-public sealed class SimulationWorld : ISimulation
+public sealed partial class SimulationWorld : ISimulation
 {
     public const uint WorldGenerationStream = 1;
     private const int RowsPerChunk = 2048; // 2048 * 28-byte rows ≈ 57 KB < 85,000-byte LOH threshold
@@ -21,7 +21,7 @@ public sealed class SimulationWorld : ISimulation
     private readonly Terrain[] terrain;
     private readonly MapView map;
     private readonly ResourceStore resources;
-    private readonly List<EntityRow> entities = new(); // ascending EntityId (allocation order)
+    private readonly List<EntityState> entities = new(); // ascending EntityId; dead rows leave the tick after death
     private long tick;
     private long nextCommandSequence = 1;
     private bool stepping;
@@ -88,6 +88,8 @@ public sealed class SimulationWorld : ISimulation
         {
             emittedThisTick = 0;
             droppedThisTick = 0;
+            // Entities that died on the previous tick were visible as Dead in that tick's snapshot; drop them now.
+            entities.RemoveAll(e => e.LifeState == LifeStates.Dead);
             while (commands.Count > 0 && commands.Peek().TargetTick == next)
                 Execute(commands.Dequeue(), next);
             scheduler.Run(next, item => RunWork(item, next));
@@ -106,17 +108,18 @@ public sealed class SimulationWorld : ISimulation
     }
 
     /// <summary>Appends within the per-tick cap; excess is counted into one EventsDropped summary (N1).</summary>
-    internal void Emit(in WorldEvent entry)
+    /// <remarks>Critical events (deaths) are never dropped; they still count toward the cap. Returns the assigned EventSequence, or 0 if dropped.</remarks>
+    internal long Emit(in WorldEvent entry, bool critical = false)
     {
-        if (emittedThisTick < options.MaxEventsPerTick - 1)
+        if (critical || emittedThisTick < options.MaxEventsPerTick - 1)
         {
+            long sequence = events.NextSequence;
             events.Append(entry);
             emittedThisTick++;
+            return sequence;
         }
-        else
-        {
-            droppedThisTick++;
-        }
+        droppedThisTick++;
+        return 0;
     }
 
     // ---- Commands -------------------------------------------------------------------------------
@@ -181,9 +184,7 @@ public sealed class SimulationWorld : ISimulation
                         reason = CommandReason.Impassable;
                         break;
                     }
-                    var id = ids.Allocate();
-                    entities.Add(new EntityRow(id, s.X, s.Y, s.SpeciesKey, 0, LifeStates.Alive));
-                    created = id.Value;
+                    created = SpawnEntity(s.X, s.Y, s.SpeciesKey, now);
                     break;
                 case TakeResourceCommand t:
                     int node = resources.Find(Cell(t.X, t.Y), t.Resource);
@@ -233,6 +234,9 @@ public sealed class SimulationWorld : ISimulation
                 stock.RegrowScheduled = false;
                 ScheduleRegrowth(node, now);
                 break;
+            case WorkKind.EntityDeath:
+                RunDeath(item.Subject, now);
+                break;
             case WorkKind.TestNoop:
                 break;
             default:
@@ -260,7 +264,7 @@ public sealed class SimulationWorld : ISimulation
         {
             int size = Math.Min(RowsPerChunk, entities.Count - start);
             var rows = ImmutableArray.CreateBuilder<EntityRow>(size);
-            for (int i = 0; i < size; i++) rows.Add(entities[start + i]);
+            for (int i = 0; i < size; i++) rows.Add(entities[start + i].Row);
             chunks.Add(rows.MoveToImmutable());
         }
         return snapshot = new(worldId, tick, WorldTime.From(tick, options.Calendar), chunks.MoveToImmutable());
@@ -291,28 +295,6 @@ public sealed class SimulationWorld : ISimulation
         return events.Read(afterSequence, limit);
     }
 
-    public HistoryPage ReadHistory(long afterSequence, int limit)
-    {
-        CheckAccess();
-        if (afterSequence < 0 || afterSequence > events.Latest || limit is < 1 or > 256)
-            return new(PageStatus.InvalidRequest, [], afterSequence);
-        return new(PageStatus.Ok, [], events.Latest); // No durable milestones before T004/T011.
-    }
-
-    public EntityDetails? ReadEntityDetails(WorldId worldId, EntityId entityId)
-    {
-        CheckAccess();
-        if (worldId != this.worldId || entityId.Value < 1 || entityId.Value >= ids.Next) return null;
-        int i = entities.BinarySearch(new EntityRow(entityId, 0, 0, 0, 0, 0), RowById.Instance);
-        return i < 0 ? null : new EntityDetails(worldId, entityId, tick);
-    }
-
-    private sealed class RowById : IComparer<EntityRow>
-    {
-        public static readonly RowById Instance = new();
-        public int Compare(EntityRow a, EntityRow b) => a.Id.Value.CompareTo(b.Id.Value);
-    }
-
     private bool InBounds(int x, int y) => (uint)x < (uint)options.MapWidth && (uint)y < (uint)options.MapHeight;
     private int Cell(int x, int y) => y * options.MapWidth + x;
 
@@ -324,7 +306,7 @@ public sealed class SimulationWorld : ISimulation
         using var bytes = new MemoryStream();
         using var writer = new BinaryWriter(bytes);
         // 1. Versions, identity, configuration, clock.
-        writer.Write(2u); // schema
+        writer.Write(3u); // schema
         writer.Write(1u); // RNG version
         writer.Write(worldId.Value);
         writer.Write(options.Seed);
@@ -347,6 +329,10 @@ public sealed class SimulationWorld : ISimulation
             writer.Write(rule.RegrowAmount);
             writer.Write(rule.RegrowIntervalTicks);
         }
+        var vc = options.Vitals;
+        foreach (long v in new[] { vc.HungerPerTick, vc.ThirstPerTick, vc.StarvationDamagePerTick, vc.DehydrationDamagePerTick,
+                     vc.RegenPerTick, vc.FoodPerUnit, vc.WaterPerUnit, vc.MaxUnitsPerAct })
+            writer.Write(v);
         writer.Write(tick);
         // 2. Counters, accepted command queue in execution order, trusted grants.
         writer.Write(ids.Next);
@@ -367,16 +353,7 @@ public sealed class SimulationWorld : ISimulation
             writer.Write((int)grant);
         }
         // 3. Entities, terrain, resources.
-        writer.Write((uint)entities.Count);
-        foreach (var e in entities)
-        {
-            writer.Write(e.Id.Value);
-            writer.Write(e.X);
-            writer.Write(e.Y);
-            writer.Write(e.VisualKey);
-            writer.Write(e.Action);
-            writer.Write(e.LifeState);
-        }
+        WriteEntities(writer); // live entities, then durable death records
         writer.Write((uint)terrain.Length);
         foreach (var t in terrain) writer.Write((byte)t);
         resources.WriteCanonical(writer);

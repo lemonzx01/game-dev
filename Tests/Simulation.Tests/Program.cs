@@ -12,7 +12,8 @@ using System.Reflection.PortableExecutable;
     ("Paged events and explicit gap", Events),
     ("Owner-thread and re-entry guards", Guards),
     ("Snapshot lifetime", Snapshots),
-    .. T003Tests.Cases
+    .. T003Tests.Cases,
+    .. T004Tests.Cases
 ];
 int failures = 0;
 foreach (var test in cases)
@@ -102,7 +103,7 @@ static void Replay()
     var baseline = RunHost("42", false);
     Check(baseline.Length == 100 && baseline.SequenceEqual(RunHost("42", true)), "per-tick replay mismatch");
     Check(!baseline.SequenceEqual(RunHost("43", false)), "seed had no effect");
-    Check(baseline[0] == "1 99FC6F6738275732C2B907694319AB0004180485FB34CE23BBC974EA36303F4B", "schema 2 canonical byte order");
+    Check(baseline[0] == "1 1B6FD2CD2E80FD373651B23DD8FAE1AB289F7E0698653322F913CF333B46C6F4", "schema 3 canonical byte order");
 }
 
 static void Events()

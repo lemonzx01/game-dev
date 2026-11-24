@@ -26,6 +26,9 @@ public enum CommandReason
     NoResource = 8,
     InsufficientStock = 9,
     InvalidAmount = 10,
+    ActorDead = 11,
+    UnknownEntity = 12,
+    NotNeeded = 13,
 }
 
 public static class EventKinds
@@ -34,6 +37,11 @@ public static class EventKinds
     public const int CommandRejected = 101;
     /// <summary>Summary of system events that exceeded the per-tick cap (Amount = dropped count).</summary>
     public const int EventsDropped = 199;
+    /// <summary>Target = EntityId, Reason = <see cref="DeathCause"/>.</summary>
+    public const int EntityDied = 200;
+    /// <summary>Actor = EntityId, X/Y = resource tile, Amount = units consumed.</summary>
+    public const int EntityAte = 201;
+    public const int EntityDrank = 202;
 }
 
 public static class LifeStates
