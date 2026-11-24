@@ -18,7 +18,7 @@ public sealed partial class SimulationWorld
 {
     private static readonly byte[] Magic = "FWSSAVE\0"u8.ToArray();
     public const uint SaveFormatVersion = 1;
-    public const uint StateSchema = 14;
+    public const uint StateSchema = 15;
     private static readonly JsonSerializerOptions OptionsJson = new() { WriteIndented = false };
 
     // ---- Save ----------------------------------------------------------------------------------
@@ -145,7 +145,9 @@ public sealed partial class SimulationWorld
         }
         w.Write(p.Relationships.Count);
         foreach (var rel in p.Relationships) { w.Write(rel.Other); w.Write(rel.Affinity); w.Write(rel.Familiarity); w.Write(rel.LastTick); }
-        w.Write(m.NoWorkUntil); w.Write(e.SettlementId); w.Write((int)e.Job); w.Write((int)e.WorkGoal); w.Write((byte)e.CarryKind); w.Write(e.CarryAmount);
+        w.Write(m.NoWorkUntil);
+        WriteMindScan(w, m);
+        w.Write(e.SettlementId); w.Write((int)e.Job); w.Write((int)e.WorkGoal); w.Write((byte)e.CarryKind); w.Write(e.CarryAmount);
         w.Write(e.TradePartner); w.Write(e.OnTrip);
         WriteSkills(w, e);
         WriteAdventure(w, e);
@@ -370,6 +372,47 @@ public sealed partial class SimulationWorld
                     && e.TradePartner >= 0 && e.TradePartner <= settlements.Count
                     && e.TamedTo >= 0 && e.TamedTo <= settlements.Count,
                 "Member, taming or trade partner references an unknown settlement.");
+            var sd = SpeciesOf(e);
+            Require(e.TamerId >= 0 && e.TamerId < ids.Next && e.TamerId != e.Id.Value,
+                "Tamer ID invalid or outside entity timeline.");
+            Require(e.TameAttemptUntil <= tick + (long)TameCfg.CooldownTicks + TameCfg.GiveUpTicks,
+                "Taming attempt claim expires past valid horizon.");
+            int tameTrust = sd?.TameTrust ?? 0;
+            if (tameTrust == 0)
+            {
+                Require(e.TamedTo == 0 && e.TamerId == 0 && e.Trust == 0 && e.TameAttemptUntil == 0,
+                    "Untameable entity holds taming state.");
+            }
+            else
+            {
+                Require(e.Trust <= tameTrust, "Entity trust exceeds species TameTrust.");
+                if (e.TamedTo > 0)
+                    Require(e.Trust == tameTrust && e.TamerId > 0 && e.TameAttemptUntil == 0,
+                        "Tamed entity requires full species trust, a tamer and cleared attempt lock.");
+                else
+                    Require(e.Trust < tameTrust && (e.Trust == 0 || e.TamerId > 0) && (e.TameAttemptUntil == 0 || e.TamerId > 0),
+                        "Untamed trust state invalid.");
+            }
+            if (e.TamerId > 0)
+            {
+                SpeciesDef? feederSpecies = null;
+                if (FindLive(e.TamerId) is int ti and >= 0)
+                {
+                    var feeder = entities[ti];
+                    feederSpecies = SpeciesOf(feeder);
+                    if (feeder.LifeState == LifeStates.Alive && e.TamedTo > 0)
+                        Require(feeder.SettlementId == e.TamedTo, "Tamed animal feeder belongs to another settlement.");
+                }
+                else if (deathIndex.TryGetValue(e.TamerId, out int di))
+                {
+                    options.Species.TryGetValue(deaths[di].Species, out feederSpecies);
+                }
+                else
+                {
+                    throw new InvalidDataException($"Tamer {e.TamerId} does not exist in entity timeline.");
+                }
+                Require(IsSapient(feederSpecies), "Non-sapient entity cannot be a tamer.");
+            }
             ValidateEntityReading(e);
             if (e.LifeState == LifeStates.Dead)
             {
@@ -475,6 +518,7 @@ public sealed partial class SimulationWorld
         for (int i = 0; i < relationCount; i++)
             p.Relationships.Add(new Relationship(r.ReadInt64(), r.ReadInt32(), r.ReadInt32(), r.ReadInt64()));
         e.Mind.NoWorkUntil = r.ReadInt64();
+        ReadMindScanFrom(r, ref e.Mind, ids.Next);
         e.SettlementId = r.ReadInt32(); e.Job = (Job)r.ReadInt32(); e.WorkGoal = (WorkGoal)r.ReadInt32();
         Require(Enum.IsDefined(e.Job) && Enum.IsDefined(e.WorkGoal), "Job or WorkGoal invalid.");
         e.CarryKind = (ResourceKind)r.ReadByte(); e.CarryAmount = r.ReadInt32();
@@ -556,6 +600,17 @@ public sealed partial class SimulationWorld
 
     internal void AddReadingProgressForTest(long entityId, long book, int pages) =>
         entities[FindLive(entityId)].Reading.Add(new ReadingProgress { Book = book, Pages = pages });
+
+    internal void SetAdventureForTest(long entityId, long? mana = null, long? manaTick = null, int? tamedTo = null, long? tamerId = null, int? trust = null)
+    {
+        var e = entities[FindLive(entityId)];
+        if (mana.HasValue) e.Mana = mana.Value;
+        if (manaTick.HasValue) e.ManaTick = manaTick.Value;
+        if (tamedTo.HasValue) e.TamedTo = tamedTo.Value;
+        if (tamerId.HasValue) e.TamerId = tamerId.Value;
+        if (trust.HasValue) e.Trust = trust.Value;
+        perceptionVersion++;
+    }
 }
 
 /// <summary>

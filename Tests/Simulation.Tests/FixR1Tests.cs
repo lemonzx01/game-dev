@@ -600,12 +600,12 @@ internal static class FixR1Tests
         // Locate the single entity's Reading.Count (uint 0 followed by ReadingBook=0, ReadingSince=0, Mana, ManaTick, TamedTo=0, TamerId=0, Trust=0, then settlements=0).
         // From the end of payload: settlements(4)=0, carcasses(4)=0... wait: settlements is at the very end!
         // In payload order before settlements: entities' last entity ends with ReadingCount(4), ReadingBook(8), ReadingSince(8), Adventure(4+8+8+4+8? No: Mana(8)+ManaTick(8)+TamedTo(4)+TamerId(8)+Trust(4)=32), deaths(4)=0, milestones(4)=0, pathQueue(4)=0, carcasses(4)=0, settlements(4)=0.
-        // Wait: WriteEntity writes skills+adventure BEFORE deaths/milestones/pathQueue/carcasses/settlements!
-        // Exact trailing size after ReadingCount(uint32): ReadingBook(8) + ReadingSince(8) + Adventure(32) + deaths(4) + milestones(4) + pathQueue(4) + carcasses(4) + settlements(4) = 68 bytes!
+        // WriteEntity writes skills+adventure BEFORE deaths/milestones/pathQueue/carcasses/settlements!
+        // Exact trailing size after ReadingCount(uint32): ReadingBook(8) + ReadingSince(8) + Adventure(40) + deaths(4) + milestones(4) + pathQueue(4) + carcasses(4) + settlements(4) = 76 bytes!
         byte[] corruptLenSave = RewritePayload(cleanSave, payload =>
         {
             var copy = (byte[])payload.Clone();
-            int offset = copy.Length - 68 - 4;
+            int offset = copy.Length - 76 - 4;
             Check(BitConverter.ToUInt32(copy, offset) == 0u, "expected Reading.Count == 0 at known offset");
             BitConverter.GetBytes(0xFFFFFFFFu).CopyTo(copy, offset);
             return copy;

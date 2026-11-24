@@ -91,32 +91,33 @@ public sealed partial class SimulationWorld
 
     // ---- Hunting -------------------------------------------------------------------------------
 
-    /// <summary>Nearest living huntable prey within perception (Manhattan, then lower ID).</summary>
-    private EntityState? NearestPrey(EntityState e)
+    /// <summary>True if <paramref name="hunter"/> is allowed to hunt <paramref name="prey"/>.</summary>
+    private bool CanHunt(EntityState hunter, EntityState prey)
     {
+        if (prey.LifeState != LifeStates.Alive) return false;
+        var hunts = SpeciesOf(hunter)?.Hunts ?? [];
+        if (!hunts.Contains(prey.Species) || !CanHarm(hunter, prey)) return false;
+        if (hunter.TamedTo != 0 && (SpeciesOf(prey)?.Domestic == true || prey.TamedTo != 0)) return false; // tamed hunters spare livestock and pets
+        return true;
+    }
+
+    /// <summary>Metered scan for nearest living huntable prey within perception (Manhattan, then lower ID).</summary>
+    private bool TryScanNearestPrey(EntityState e, long now, out EntityState? prey)
+    {
+        prey = null;
         var hunts = SpeciesOf(e)?.Hunts ?? [];
-        if (hunts.IsEmpty) return null;
-        EntityState? best = null;
-        int bestDistance = int.MaxValue, r = MindCfg.PerceptionRadius;
-        grid.Query(e.X, e.Y, r, id =>
-        {
-            if (id == e.Id.Value) return;
-            var other = entities[FindLive(id)];
-            if (other.LifeState != LifeStates.Alive || !hunts.Contains(other.Species) || !CanHarm(e, other)) return;
-            if (e.TamedTo != 0 && (SpeciesOf(other)?.Domestic == true || other.TamedTo != 0)) return; // tamed hunters spare livestock and pets
-            if (Math.Max(Math.Abs(other.X - e.X), Math.Abs(other.Y - e.Y)) > r) return;
-            int d = Math.Abs(other.X - e.X) + Math.Abs(other.Y - e.Y);
-            if (d < bestDistance || (d == bestDistance && other.Id.Value < best!.Id.Value)) { best = other; bestDistance = d; }
-        });
-        return best;
+        if (hunts.IsEmpty) return true;
+        return RunMeteredBestScan(
+            e, ScanPhase.Hunt, null, e.X, e.Y, MindCfg.PerceptionRadius, long.MaxValue, now,
+            out prey, out _, out _);
     }
 
     private void HuntStep(EntityState e, long now)
     {
         var prey = FindLive(e.Mind.TargetEntity) is int pi and >= 0 ? entities[pi] : null;
-        if (prey is null || prey.LifeState != LifeStates.Alive)
+        if (prey is null || !(e.Mind.Kind == ActionKind.Hunt ? CanHunt(e, prey) : CanHarm(e, prey)))
         {
-            FinishAction(e, now); // prey killed or lost; the next think looks for the carcass
+            FinishAction(e, now); // prey killed, lost or no longer eligible; next think picks a valid target
             return;
         }
         if (now >= e.Mind.HuntUntil)
@@ -144,7 +145,19 @@ public sealed partial class SimulationWorld
             return;
         }
         int step = ChaseStep(e, prey);
-        if (step >= 0) MoveTo(e, step);
+        if (step >= 0)
+        {
+            MoveTo(e, step);
+        }
+        else if (e.Mind.Kind == ActionKind.Hunt
+                 && AnimalLeashTarget(e, out int hx, out int hy, out int lr)
+                 && Math.Max(Math.Abs(e.X - hx), Math.Abs(e.Y - hy)) > lr)
+        {
+            // While outside the leash, don't hang in place staring at prey further outside; head back home.
+            e.Mind.NoHuntUntil = now + options.Ecology.HuntCooldownTicks;
+            FinishAction(e, now);
+            return;
+        }
         ScheduleStep(e, now + MoveTicks(e));
     }
 
@@ -155,29 +168,53 @@ public sealed partial class SimulationWorld
         foreach (var (dx, dy) in Neighbours)
         {
             int x = e.X + dx, y = e.Y + dy;
-            if (!InBounds(x, y) || !TerrainRules.IsPassable(terrain[Cell(x, y)])) continue;
+            if (!InBounds(x, y) || !TerrainRules.IsPassable(terrain[Cell(x, y)]) || !WithinAnimalLeash(e, x, y)) continue;
             int d = Math.Abs(x - prey.X) + Math.Abs(y - prey.Y);
             if (d < bestDistance) { best = Cell(x, y); bestDistance = d; }
         }
         return best;
     }
 
-    // ---- Farm animals --------------------------------------------------------------------------
+    // ---- Farm and tamed animal leashing --------------------------------------------------------
 
-    /// <summary>True if moving to (x, y) keeps a domestic animal inside its leash, or brings it closer to home.</summary>
-    private bool WithinLeash(EntityState e, int x, int y)
+    private bool HasAnimalLeash(EntityState e) => e.TamedTo != 0 || (SpeciesOf(e)?.Domestic ?? false);
+
+    private bool AnimalLeashTarget(EntityState e, out int hx, out int hy, out int radius)
     {
-        if ((SettlementOf(e) ?? TamedHome(e)) is { } town) // members and tamed animals roam within the town radius
+        if (TamedHome(e) is { } town)
         {
-            int from = Math.Max(Math.Abs(e.X - town.X), Math.Abs(e.Y - town.Y));
-            int to = Math.Max(Math.Abs(x - town.X), Math.Abs(y - town.Y));
-            return to <= TownCfg.Radius || to < from;
+            hx = town.X; hy = town.Y; radius = TownCfg.Radius;
+            return true;
         }
         var sd = SpeciesOf(e);
-        if (sd is null || !sd.Domestic) return true;
-        int now = Math.Max(Math.Abs(e.X - e.HomeX), Math.Abs(e.Y - e.HomeY));
-        int next = Math.Max(Math.Abs(x - e.HomeX), Math.Abs(y - e.HomeY));
-        return next <= sd.LeashRadius || next < now;
+        if (sd is { Domestic: true })
+        {
+            hx = e.HomeX; hy = e.HomeY; radius = sd.LeashRadius;
+            return true;
+        }
+        hx = 0; hy = 0; radius = 0;
+        return false;
+    }
+
+    private static bool StepHonorsLeash(int cx, int cy, int hx, int hy, int radius, int x, int y)
+    {
+        int dx0 = Math.Abs(cx - hx), dy0 = Math.Abs(cy - hy);
+        int from = Math.Max(dx0, dy0);
+        int dx1 = Math.Abs(x - hx), dy1 = Math.Abs(y - hy);
+        int to = Math.Max(dx1, dy1);
+        return to <= radius || to < from || (to == from && (dx1 + dy1) < (dx0 + dy0));
+    }
+
+    private bool WithinAnimalLeash(EntityState e, int x, int y) =>
+        !AnimalLeashTarget(e, out int hx, out int hy, out int r)
+        || StepHonorsLeash(e.X, e.Y, hx, hy, r, x, y);
+
+    /// <summary>True if moving to (x, y) keeps a settled person (wander) or leashed animal inside its radius, or brings it closer to home.</summary>
+    private bool WithinLeash(EntityState e, int x, int y)
+    {
+        if ((SettlementOf(e) ?? TamedHome(e)) is { } town)
+            return StepHonorsLeash(e.X, e.Y, town.X, town.Y, TownCfg.Radius, x, y);
+        return WithinAnimalLeash(e, x, y);
     }
 
     private void WriteEcology(BinaryWriter w)

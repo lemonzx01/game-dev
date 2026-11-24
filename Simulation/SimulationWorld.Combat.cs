@@ -35,6 +35,7 @@ public sealed record MagicConfig(int MinScholarshipLevel = 1, long BaseMana = 10
     {
         foreach (long v in new[] { MinScholarshipLevel, BaseMana, ManaRegenTicks, FireboltCost, FireboltRange, FireboltDamage, CastIntervalTicks, HealCost, HealRange, HealAmount })
             ArgumentOutOfRangeException.ThrowIfLessThan(v, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(BaseMana, long.MaxValue - 100);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(HealBelowHealth, VitalsConfig.MaxHealth);
     }
 
@@ -86,27 +87,57 @@ public sealed partial class SimulationWorld
         return IsSapient(d) ? CombatCfg.UnarmedDamage : 0;
     }
 
-    private long Damage(EntityState attacker, EntityState target, long basePower, long now)
+    private static Int128 ScalePercent(Int128 value, Int128 percent)
     {
-        long dmg = basePower * (100 + 10 * Level(attacker, Skill.Combat)) / 100;                       // experience
-        dmg = dmg * (50 + 50 * attacker.Vitals.At(now, options.Vitals).Health / VitalsConfig.MaxHealth) / 100; // wounded fight weaker
-        dmg = dmg * (100 + CombatCfg.AllyBonusPercent * AlliesFighting(attacker, target)) / 100;     // numbers
-        return dmg * (SpeciesOf(target)?.DamageTakenPercent ?? 100) / 100;                           // toughness (dragon hide)
+        if (value <= 0 || percent <= 0) return 0;
+        if (value <= Int128.MaxValue / percent) return value * percent / 100;
+        var exact = (System.Numerics.BigInteger)value * (System.Numerics.BigInteger)percent / 100;
+        var cap = (System.Numerics.BigInteger)long.MaxValue * 1000;
+        return exact >= cap ? (Int128)long.MaxValue * 1000 : (Int128)exact;
     }
 
-    // Allies within AllyRadius engaged against the same target (townmates, or the same wild species), capped.
+    private long Damage(EntityState attacker, EntityState target, long basePower, long now)
+    {
+        Int128 dmg = basePower;
+        dmg = ScalePercent(dmg, 100 + (Int128)10 * Level(attacker, Skill.Combat));                       // experience
+        dmg = ScalePercent(dmg, 50 + (Int128)50 * attacker.Vitals.At(now, options.Vitals).Health / VitalsConfig.MaxHealth); // wounded fight weaker
+        dmg = ScalePercent(dmg, 100 + (Int128)CombatCfg.AllyBonusPercent * AlliesFighting(attacker, target)); // numbers
+        dmg = ScalePercent(dmg, SpeciesOf(target)?.DamageTakenPercent ?? 100);                           // toughness (dragon hide)
+        return dmg >= long.MaxValue ? long.MaxValue : (long)dmg;
+    }
+
+    private struct AlliesVisitor : IGridVisitor
+    {
+        public SimulationWorld World;
+        public EntityState Attacker, Target;
+        public int Count;
+
+        public bool Visit(long id)
+        {
+            World.candidateVisitsThisTick++;
+            if (id == Attacker.Id.Value || id == Target.Id.Value) return true;
+            var o = World.entities[World.FindLive(id)];
+            if (o.LifeState != LifeStates.Alive || o.Mind.TargetEntity != Target.Id.Value || o.Mind.Kind is not (ActionKind.Hunt or ActionKind.Defend)) return true;
+            bool ally = Attacker.SettlementId != 0 ? o.SettlementId == Attacker.SettlementId : o.SettlementId == 0 && o.Species == Attacker.Species;
+            if (ally && Math.Max(Math.Abs(o.X - Attacker.X), Math.Abs(o.Y - Attacker.Y)) <= World.CombatCfg.AllyRadius)
+            {
+                if (++Count >= World.CombatCfg.MaxAllies) return false;
+            }
+            return true;
+        }
+    }
+
+    // Allies within AllyRadius engaged against the same target (townmates, or the same wild species), capped & short-circuited.
     private int AlliesFighting(EntityState attacker, EntityState target)
     {
-        int count = 0;
-        grid.Query(attacker.X, attacker.Y, CombatCfg.AllyRadius, id =>
-        {
-            if (id == attacker.Id.Value || id == target.Id.Value) return;
-            var o = entities[FindLive(id)];
-            if (o.LifeState != LifeStates.Alive || o.Mind.TargetEntity != target.Id.Value || o.Mind.Kind is not (ActionKind.Hunt or ActionKind.Defend)) return;
-            bool ally = attacker.SettlementId != 0 ? o.SettlementId == attacker.SettlementId : o.SettlementId == 0 && o.Species == attacker.Species;
-            if (ally && Math.Max(Math.Abs(o.X - attacker.X), Math.Abs(o.Y - attacker.Y)) <= CombatCfg.AllyRadius) count++;
-        });
-        return Math.Min(count, CombatCfg.MaxAllies);
+        if (CombatCfg.MaxAllies <= 0) return 0;
+        int maxVisits = QuerySliceBudgetNow();
+        if (maxVisits <= 0) return 0;
+        int dummyBucket = 0;
+        long dummyId = 0;
+        var visitor = new AlliesVisitor { World = this, Attacker = attacker, Target = target };
+        grid.QueryRange(attacker.X, attacker.Y, CombatCfg.AllyRadius, 0, 0, maxVisits, ref dummyBucket, ref dummyId, ref visitor, out _);
+        return Math.Min(visitor.Count, CombatCfg.MaxAllies);
     }
 
     private void AddFatigue(EntityState e, long amount, long now)
@@ -140,6 +171,7 @@ public sealed partial class SimulationWorld
         }
         prey.Vitals = new VitalsAnchor(now, v.Hunger, v.Thirst, health);
         ScheduleDeath(prey); // the old booking becomes stale
+        perceptionVersion++;
         OnAttacked(prey, attacker, now);
         if (SpeciesOf(prey) is { Retaliates: true } && prey.Mind.Kind != ActionKind.Defend && CanHarm(prey, attacker))
             StartFight(prey, attacker, now);
@@ -167,6 +199,26 @@ public sealed partial class SimulationWorld
 
     // ---- Fighting back -------------------------------------------------------------------------
 
+    private struct FriendsVisitor : IGridVisitor
+    {
+        public SimulationWorld World;
+        public EntityState Actor;
+        public int Friends;
+
+        public bool Visit(long id)
+        {
+            World.candidateVisitsThisTick++;
+            if (id == Actor.Id.Value) return true;
+            var o = World.entities[World.FindLive(id)];
+            if (o.LifeState == LifeStates.Alive && Actor.SettlementId != 0 && o.SettlementId == Actor.SettlementId
+                && Math.Max(Math.Abs(o.X - Actor.X), Math.Abs(o.Y - Actor.Y)) <= World.CombatCfg.AllyRadius)
+            {
+                if (++Friends >= World.CombatCfg.FightBackAllies) return false;
+            }
+            return true;
+        }
+    }
+
     /// <summary>A non-guard adult person fights a close threat when cornered, or when brave with enough friends nearby.</summary>
     private bool FightsBack(EntityState e, EntityState? threat, int distance, long now)
     {
@@ -174,24 +226,14 @@ public sealed partial class SimulationWorld
         if (distance > CombatCfg.FightBackDistance || !CanHarm(e, threat)) return false;
         if (FleeStep(e, threat) < 0) return true; // cornered
         if (e.Psyche.Bravery < CombatCfg.FightBackBravery) return false;
-        int friends = 0;
-        grid.Query(e.X, e.Y, CombatCfg.AllyRadius, id =>
-        {
-            if (id == e.Id.Value) return;
-            var o = entities[FindLive(id)];
-            if (o.LifeState == LifeStates.Alive && e.SettlementId != 0 && o.SettlementId == e.SettlementId
-                && Math.Max(Math.Abs(o.X - e.X), Math.Abs(o.Y - e.Y)) <= CombatCfg.AllyRadius) friends++;
-        });
-        return friends >= CombatCfg.FightBackAllies;
-    }
-
-    /// <summary>Who a Defend action targets: a guard's town intruder, else the close threat this person fights back against.</summary>
-    private EntityState? DefendTarget(EntityState e, EntityState? threat, long now)
-    {
-        if (TownThreat(e) is { } intruder) return intruder;
-        if (threat is null) return null;
-        int distance = Math.Abs(threat.X - e.X) + Math.Abs(threat.Y - e.Y);
-        return FightsBack(e, threat, distance, now) ? threat : null;
+        if (CombatCfg.FightBackAllies <= 0) return true;
+        int maxVisits = QuerySliceBudgetNow();
+        if (maxVisits <= 0) return false;
+        int dummyBucket = 0;
+        long dummyId = 0;
+        var visitor = new FriendsVisitor { World = this, Actor = e };
+        grid.QueryRange(e.X, e.Y, CombatCfg.AllyRadius, 0, 0, maxVisits, ref dummyBucket, ref dummyId, ref visitor, out _);
+        return visitor.Friends >= CombatCfg.FightBackAllies;
     }
 
     // ---- Magic ---------------------------------------------------------------------------------
@@ -212,7 +254,13 @@ public sealed partial class SimulationWorld
     private bool KnowsMagic(EntityState e) =>
         IsSapient(SpeciesOf(e)) && e.LifeState == LifeStates.Alive && Level(e, Skill.Scholarship) >= MagicCfg.MinScholarshipLevel;
 
-    private long ManaAt(EntityState e, long now) => Math.Min(MaxMana(e), e.Mana + (now - e.ManaTick) / MagicCfg.ManaRegenTicks);
+    private long ManaAt(EntityState e, long now)
+    {
+        long max = MaxMana(e);
+        long gain = (now - e.ManaTick) / MagicCfg.ManaRegenTicks;
+        long room = max - e.Mana;
+        return room <= 0 ? max : e.Mana + Math.Min(room, gain);
+    }
 
     private bool Spend(EntityState e, long cost, long now)
     {
@@ -223,12 +271,15 @@ public sealed partial class SimulationWorld
         return true;
     }
 
+    private bool CanCastFirebolt(EntityState caster, EntityState target, long now) =>
+        KnowsMagic(caster) && CanHarm(caster, target)
+        && ManaAt(caster, now) >= MagicCfg.FireboltCost
+        && Math.Max(Math.Abs(target.X - caster.X), Math.Abs(target.Y - caster.Y)) <= MagicCfg.FireboltRange;
+
     /// <summary>Firebolt: ranged damage to a valid foe within range. Costs mana only when cast.</summary>
     private bool CastFirebolt(EntityState caster, EntityState target, long now)
     {
-        if (!KnowsMagic(caster) || !CanHarm(caster, target)) return false;
-        if (Math.Max(Math.Abs(target.X - caster.X), Math.Abs(target.Y - caster.Y)) > MagicCfg.FireboltRange) return false;
-        if (!Spend(caster, MagicCfg.FireboltCost, now)) return false;
+        if (!CanCastFirebolt(caster, target, now) || !Spend(caster, MagicCfg.FireboltCost, now)) return false;
         AddFatigue(caster, CombatCfg.FatiguePerAttack, now);
         GainXp(caster, Skill.Combat, SkillCfg.XpPerHit, now);
         long damage = Damage(caster, target, MagicCfg.FireboltDamage, now);
@@ -237,28 +288,37 @@ public sealed partial class SimulationWorld
         return true;
     }
 
-    /// <summary>Heal: restores health of the most wounded townmate in range (below the threshold). Costs mana only when cast.</summary>
-    private bool TryHeal(EntityState caster, long now)
+    private bool CanHeal(EntityState caster, EntityState target, long now) =>
+        caster.LifeState == LifeStates.Alive && target.LifeState == LifeStates.Alive
+        && caster.SettlementId != 0 && target.SettlementId == caster.SettlementId
+        && KnowsMagic(caster)
+        && Math.Max(Math.Abs(target.X - caster.X), Math.Abs(target.Y - caster.Y)) <= MagicCfg.HealRange
+        && target.Vitals.At(now, options.Vitals).Health < MagicCfg.HealBelowHealth;
+
+    /// <summary>Heal a specific eligible townmate. Shared validation, mana, and fatigue costs (reused by T020).</summary>
+    private bool CastHeal(EntityState caster, EntityState target, long now)
     {
-        if (caster.SettlementId == 0 || !KnowsMagic(caster) || ManaAt(caster, now) < MagicCfg.HealCost) return false;
-        EntityState? best = null;
-        long bestHealth = MagicCfg.HealBelowHealth;
-        grid.Query(caster.X, caster.Y, MagicCfg.HealRange, id =>
-        {
-            var o = entities[FindLive(id)];
-            if (o.LifeState != LifeStates.Alive || o.SettlementId != caster.SettlementId) return;
-            if (Math.Max(Math.Abs(o.X - caster.X), Math.Abs(o.Y - caster.Y)) > MagicCfg.HealRange) return;
-            long h = o.Vitals.At(now, options.Vitals).Health;
-            if (h < bestHealth || (h == bestHealth && best is not null && o.Id.Value < best.Id.Value)) { best = o; bestHealth = h; }
-        });
-        if (best is null || !Spend(caster, MagicCfg.HealCost, now)) return false;
-        var v = best.Vitals.At(now, options.Vitals);
+        if (!CanHeal(caster, target, now) || !Spend(caster, MagicCfg.HealCost, now)) return false;
+        AddFatigue(caster, CombatCfg.FatiguePerAttack, now);
+        var v = target.Vitals.At(now, options.Vitals);
         long healed = Math.Min(MagicCfg.HealAmount, VitalsConfig.MaxHealth - v.Health);
-        best.Vitals = new VitalsAnchor(now, v.Hunger, v.Thirst, v.Health + healed);
-        ScheduleDeath(best);
-        Relate(best, caster.Id.Value, 300, now);
-        Emit(new WorldEvent(0, now, EventKinds.SpellCast, 0, caster.Id.Value, best.Id.Value, best.X, best.Y, (int)Spell.Heal, healed));
+        target.Vitals = new VitalsAnchor(now, v.Hunger, v.Thirst, v.Health + healed);
+        ScheduleDeath(target);
+        perceptionVersion++;
+        Relate(target, caster.Id.Value, 300, now);
+        Emit(new WorldEvent(0, now, EventKinds.SpellCast, 0, caster.Id.Value, target.Id.Value, target.X, target.Y, (int)Spell.Heal, healed));
         return true;
+    }
+
+    /// <summary>Metered scan for the most wounded eligible townmate in range (lowest HP, then ascending ID).</summary>
+    private bool TryScanHealTarget(EntityState caster, long now, out EntityState? target)
+    {
+        target = null;
+        if (caster.SettlementId == 0 || !KnowsMagic(caster) || ManaAt(caster, now) < MagicCfg.HealCost) return true;
+        return RunCachedBestScan(
+            caster, ScanPhase.Heal, null, ScanCacheKind.Heal, caster.SettlementId, 0,
+            caster.X, caster.Y, caster.X, caster.Y, MagicCfg.HealRange, MagicCfg.HealBelowHealth, now, shareInCache: true,
+            out target, out _, out _);
     }
 
     // ---- State, reads, test hooks --------------------------------------------------------------
@@ -270,6 +330,7 @@ public sealed partial class SimulationWorld
         w.Write(e.TamedTo);
         w.Write(e.TamerId);
         w.Write(e.Trust);
+        w.Write(e.TameAttemptUntil);
     }
 
     private void ReadAdventureFrom(BinaryReader r, EntityState e)
@@ -279,7 +340,10 @@ public sealed partial class SimulationWorld
         e.TamedTo = r.ReadInt32();
         e.TamerId = r.ReadInt64();
         e.Trust = r.ReadInt32();
-        if (e.Mana < 0 || e.Mana > MaxMana(e) || e.TamedTo < 0 || e.Trust < 0) throw new InvalidDataException("Mana or taming state invalid.");
+        e.TameAttemptUntil = r.ReadInt64();
+        if (e.Mana < 0 || e.ManaTick < 0 || e.ManaTick > tick || e.Mana > MaxMana(e)
+            || e.TamedTo < 0 || e.TamerId < 0 || e.Trust < 0 || e.TameAttemptUntil < 0)
+            throw new InvalidDataException("Mana or taming state invalid.");
     }
 
     public AdventureView? ReadAdventure(WorldId worldId, EntityId entityId)
@@ -296,6 +360,7 @@ public sealed partial class SimulationWorld
         var v = e.Vitals.At(tick, options.Vitals);
         e.Vitals = new VitalsAnchor(tick, v.Hunger, v.Thirst, health);
         ScheduleDeath(e);
+        perceptionVersion++;
     }
 
     internal void SetBraveryForTest(long id, int bravery) => entities[FindLive(id)].Psyche.Bravery = bravery;
@@ -313,5 +378,30 @@ public sealed partial class SimulationWorld
         e.TamedTo = settlementId;
         e.HomeX = settlements[settlementId - 1].X;
         e.HomeY = settlements[settlementId - 1].Y;
+        if (SpeciesOf(e) is { TameTrust: > 0 } sd) e.Trust = sd.TameTrust;
+        if (e.TamerId == 0)
+            e.TamerId = entities.FirstOrDefault(m => m.LifeState == LifeStates.Alive && m.SettlementId == settlementId)?.Id.Value ?? 0;
+        perceptionVersion++;
+    }
+
+    internal long ComputeDamageForTest(long attackerId, long targetId, long basePower) =>
+        Damage(entities[FindLive(attackerId)], entities[FindLive(targetId)], basePower, tick);
+
+    internal (long Mana, long ManaTick) ManaAnchorForTest(long id)
+    {
+        var e = entities[FindLive(id)];
+        return (e.Mana, e.ManaTick);
+    }
+
+    internal bool TryCastFireboltForTest(long casterId, long targetId)
+    {
+        int ci = FindLive(casterId), ti = FindLive(targetId);
+        return ci >= 0 && ti >= 0 && CastFirebolt(entities[ci], entities[ti], tick);
+    }
+
+    internal bool TryCastHealForTest(long casterId, long targetId)
+    {
+        int ci = FindLive(casterId), ti = FindLive(targetId);
+        return ci >= 0 && ti >= 0 && CastHeal(entities[ci], entities[ti], tick);
     }
 }
