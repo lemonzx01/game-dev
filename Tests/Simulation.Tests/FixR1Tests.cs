@@ -1,5 +1,6 @@
 using FantasyWorld.Simulation;
 using System.Collections.Immutable;
+using System.Security.Cryptography;
 using static FantasyWorld.Simulation.SpeciesCatalog;
 
 /// <summary>Regression tests for FIX-R1 (Codex review findings 1–12 for T015–T017).</summary>
@@ -16,6 +17,8 @@ internal static class FixR1Tests
         ("FIX-R1 #4 guard promotion defers until carried load is deposited", PromotionDoesNotStrandCarriedLoad),
         ("FIX-R1 #5 max CarryCapacity with skill bonus does not overflow negative", CarryCapacityNoSignedOverflow),
         ("FIX-R1 #6 scholarship XP bonus rejects extreme tuning and saturates at long.MaxValue", ScholarshipBonusXpNoOverflow),
+        ("FIX-R1 #7 invalid crop scheduler fixtures (missing plot, duplicate timer, missing timer) are rejected", CropSchedulerInvariantsOnLoad),
+        ("FIX-R1 #8 settlement, trade, carry, reading save invariants and positive controls", SettlementTradeReadingInvariantsOnLoad),
     ];
 
     private static void Check(bool ok, string message)
@@ -440,5 +443,219 @@ internal static class FixR1Tests
         var loaded = SimulationWorld.Load(new MemoryStream(ms.ToArray()));
         Check(loaded.StateHash() == world.StateHash(), "saturated XP checkpoint loads cleanly");
         Check(loaded.ReadSkills(W, new EntityId(harvest.Actor))!.Farming == long.MaxValue, "loaded XP preserved");
+    }
+
+    // ---- Finding 7 ------------------------------------------------------------------------------
+
+    private static byte[] SaveBytes(SimulationWorld world)
+    {
+        using var ms = new MemoryStream();
+        world.Save(ms);
+        return ms.ToArray();
+    }
+
+    private static void RequireSaveRejected(byte[] bytes, string label)
+    {
+        try
+        {
+            SimulationWorld.Load(new MemoryStream(bytes));
+        }
+        catch (SaveFormatException)
+        {
+            return;
+        }
+        throw new Exception($"Expected SaveFormatException for {label}, but load succeeded.");
+    }
+
+    private static SimulationWorld TwoTownSaveBase(int farmPlots = 1, int members = 3)
+    {
+        var rows = Enumerable.Range(0, 24).Select(y => y is 0 or 23 ? new string('^', 50) : "^" + new string('.', 48) + "^").ToList();
+        var world = new SimulationWorld(new SimulationOptions
+        {
+            WorldId = W,
+            Seed = 707,
+            MapWidth = 50,
+            MapHeight = 24,
+            Map = MapOverride.FromRows(rows),
+            Species = Default,
+            Vitals = new VitalsConfig(0, 0, 0, 0, 0, 250_000, 100_000, 4),
+            Mind = MindConfig.Default with { FatiguePerTick = 0 },
+            Settlements = SettlementConfig.Default with { FarmPlots = farmPlots, WoodTarget = 0, FoodTarget = 60 },
+            Grants = ImmutableSortedDictionary<long, AuthorityGrant>.Empty.Add(God, AuthorityGrant.God),
+        });
+        world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 10, 10, Faction.Human, "West"));
+        world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 40, 10, Faction.Demon, "East"));
+        for (int k = 0; k < members; k++)
+            world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 10, 10, Human));
+        world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 40, 10, Demon));
+        world.Step();
+        return world;
+    }
+
+    private static void CropSchedulerInvariantsOnLoad()
+    {
+        // 1. Missing plot target (plot index out of bounds).
+        var missingPlot = TwoTownSaveBase(farmPlots: 1, members: 2);
+        missingPlot.AddCropTimerForTest(1, 5);
+        RequireSaveRejected(SaveBytes(missingPlot), "CropGrow referencing missing plot");
+
+        // 2. Duplicate crop timer for the same (settlement, plot).
+        var dupTimer = TwoTownSaveBase(farmPlots: 1, members: 2);
+        dupTimer.AddCropTimerForTest(1, 0, dueOffset: 20);
+        RequireSaveRejected(SaveBytes(dupTimer), "duplicate CropGrow timer");
+
+        // 3. Missing timer while GrowScheduled is true.
+        var missingTimer = TwoTownSaveBase(farmPlots: 1, members: 2);
+        missingTimer.SetPlotGrowScheduledForTest(1, 0, scheduled: true, dropTimer: true);
+        RequireSaveRejected(SaveBytes(missingTimer), "missing CropGrow timer when GrowScheduled is true");
+    }
+
+    // ---- Finding 8 ------------------------------------------------------------------------------
+
+    private static byte[] RewritePayload(byte[] save, Func<byte[], byte[]> editPayload)
+    {
+        using var r = new BinaryReader(new MemoryStream(save));
+        byte[] head = r.ReadBytes(16);
+        byte[] options = r.ReadBytes(r.ReadInt32());
+        byte[] payload = r.ReadBytes(r.ReadInt32());
+        r.ReadBytes(32);
+        byte[] hash = r.ReadBytes(64);
+        payload = editPayload(payload);
+        using var ms = new MemoryStream();
+        using var w = new BinaryWriter(ms);
+        w.Write(head);
+        w.Write(options.Length); w.Write(options);
+        w.Write(payload.Length); w.Write(payload);
+        w.Write(SHA256.HashData([.. options, .. payload]));
+        w.Write(hash);
+        return ms.ToArray();
+    }
+
+    private static void SettlementTradeReadingInvariantsOnLoad()
+    {
+        // Determine a non-guard carrier id in West town.
+        var probe = TwoTownSaveBase(farmPlots: 0, members: 3);
+        for (int t = 0; t < 20; t++) probe.Step();
+        long carrier = probe.ReadSnapshot().Chunks.SelectMany(c => c)
+            .First(r => probe.ReadEntityDetails(W, r.Id) is { SettlementId: 1, Job: not Job.Guard }).Id.Value;
+
+        // 1. Positive cargo with invalid kind (Water).
+        var badCarryKind = TwoTownSaveBase(farmPlots: 0, members: 3);
+        for (int t = 0; t < 20; t++) badCarryKind.Step();
+        badCarryKind.SetCarryForTest(carrier, ResourceKind.Water, 3);
+        RequireSaveRejected(SaveBytes(badCarryKind), "positive cargo with Water kind");
+
+        // 2. Active TradeTravel without a buyer (TradePartner = 0).
+        var travelNoBuyer = TwoTownSaveBase(farmPlots: 0, members: 3);
+        for (int t = 0; t < 20; t++) travelNoBuyer.Step();
+        travelNoBuyer.SetCarryForTest(carrier, ResourceKind.Food, 4);
+        travelNoBuyer.SetTradeStateForTest(carrier, partner: 0, onTrip: true, goal: WorkGoal.TradeTravel, action: ActionKind.Work);
+        travelNoBuyer.SetSettlementCountersForTest(1, members: 3, guards: 1, tradersOut: 1);
+        RequireSaveRejected(SaveBytes(travelNoBuyer), "active TradeTravel with TradePartner=0");
+
+        // 3. Mismatched TradersOut counter.
+        var badTradersOut = TwoTownSaveBase(farmPlots: 0, members: 3);
+        for (int t = 0; t < 20; t++) badTradersOut.Step();
+        badTradersOut.SetSettlementCountersForTest(1, members: 3, guards: 1, tradersOut: 1);
+        RequireSaveRejected(SaveBytes(badTradersOut), "mismatched TradersOut");
+
+        // 4. Open reading session with unknown book key.
+        var unknownBook = TwoTownSaveBase(farmPlots: 0, members: 3);
+        for (int t = 0; t < 20; t++) unknownBook.Step();
+        unknownBook.SetReadingStateForTest(carrier, book: 999_001, since: unknownBook.LastCompletedTick, action: ActionKind.Read);
+        RequireSaveRejected(SaveBytes(unknownBook), "open reading session with unknown book");
+
+        // 5. Open reading session with future start tick.
+        var futureRead = TwoTownSaveBase(farmPlots: 0, members: 3);
+        for (int t = 0; t < 20; t++) futureRead.Step();
+        futureRead.SetReadingStateForTest(carrier, book: 1000, since: futureRead.LastCompletedTick + 5, action: ActionKind.Read);
+        RequireSaveRejected(SaveBytes(futureRead), "open reading session with future ReadingSince");
+
+        // 6. Duplicate book key in Reading list.
+        var dupBook = TwoTownSaveBase(farmPlots: 0, members: 3);
+        for (int t = 0; t < 20; t++) dupBook.Step();
+        dupBook.AddReadingProgressForTest(carrier, 1000, 10);
+        dupBook.AddReadingProgressForTest(carrier, 1000, 20);
+        RequireSaveRejected(SaveBytes(dupBook), "duplicate book key in Reading list");
+
+        // 7. Unsigned collection length >= 0x80000000u (Reading.Count) must not narrow negative and bypass cap.
+        var emptyReadWorld = new SimulationWorld(new SimulationOptions
+        {
+            WorldId = W,
+            Seed = 708,
+            MapWidth = 16,
+            MapHeight = 16,
+            Species = Default,
+            Vitals = new VitalsConfig(0, 0, 0, 0, 0, 250_000, 100_000, 4),
+            Mind = MindConfig.Disabled,
+            Grants = ImmutableSortedDictionary<long, AuthorityGrant>.Empty.Add(God, AuthorityGrant.God),
+        });
+        emptyReadWorld.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 8, 8, Human));
+        emptyReadWorld.Step();
+        byte[] cleanSave = SaveBytes(emptyReadWorld);
+        // Locate the single entity's Reading.Count (uint 0 followed by ReadingBook=0, ReadingSince=0, Mana, ManaTick, TamedTo=0, TamerId=0, Trust=0, then settlements=0).
+        // From the end of payload: settlements(4)=0, carcasses(4)=0... wait: settlements is at the very end!
+        // In payload order before settlements: entities' last entity ends with ReadingCount(4), ReadingBook(8), ReadingSince(8), Adventure(4+8+8+4+8? No: Mana(8)+ManaTick(8)+TamedTo(4)+TamerId(8)+Trust(4)=32), deaths(4)=0, milestones(4)=0, pathQueue(4)=0, carcasses(4)=0, settlements(4)=0.
+        // Wait: WriteEntity writes skills+adventure BEFORE deaths/milestones/pathQueue/carcasses/settlements!
+        // Exact trailing size after ReadingCount(uint32): ReadingBook(8) + ReadingSince(8) + Adventure(32) + deaths(4) + milestones(4) + pathQueue(4) + carcasses(4) + settlements(4) = 68 bytes!
+        byte[] corruptLenSave = RewritePayload(cleanSave, payload =>
+        {
+            var copy = (byte[])payload.Clone();
+            int offset = copy.Length - 68 - 4;
+            Check(BitConverter.ToUInt32(copy, offset) == 0u, "expected Reading.Count == 0 at known offset");
+            BitConverter.GetBytes(0xFFFFFFFFu).CopyTo(copy, offset);
+            return copy;
+        });
+        try
+        {
+            SimulationWorld.Load(new MemoryStream(corruptLenSave));
+            throw new Exception("Expected SaveFormatException for 0xFFFFFFFFu Reading.Count");
+        }
+        catch (SaveFormatException ex)
+        {
+            Check(ex.Message.Contains("Reading list too long", StringComparison.Ordinal),
+                $"expected unsigned Reading list length check to reject 0xFFFFFFFFu, got: {ex.Message}");
+        }
+
+        // Positive control A: legitimate trader returning with unsold goods loads and continues identically.
+        var retWorld = TwoTownSaveBase(farmPlots: 0, members: 3);
+        retWorld.SetStorageForTest(1, food: 300, wood: 100, coins: 100);
+        retWorld.SetStorageForTest(2, food: 0, wood: 100, coins: 100);
+        long retCursor = retWorld.ReadEvents(0, 1).LatestSequence;
+        bool loadedEight = false;
+        for (int t = 0; t < 200 && !loadedEight; t++)
+        {
+            var ev = Run(retWorld, 1, ref retCursor);
+            if (ev.Any(e => e.Kind == EventKinds.TradeLoaded && e.Amount == 8)) loadedEight = true;
+        }
+        Check(loadedEight, "trader loaded 8 units");
+        // Reduce buyer coins in transit so only 3 units can be paid for on arrival.
+        retWorld.SetStorageForTest(2, food: 0, wood: 100, coins: 6);
+        bool soldPartial = false;
+        for (int t = 0; t < 400 && !soldPartial; t++)
+        {
+            var ev = Run(retWorld, 1, ref retCursor);
+            if (ev.Any(e => e.Kind == EventKinds.TradeSold && e.Amount == 3)) soldPartial = true;
+        }
+        Check(soldPartial, "trader sold 3 and now carries 5 unsold units home");
+        var returning = retWorld.ReadSnapshot().Chunks.SelectMany(c => c)
+            .Select(r => retWorld.ReadEntityDetails(W, r.Id)!)
+            .Single(d => d.SettlementId == 1 && d.CarryAmount == 5);
+        Check(returning.CarryKind == ResourceKind.Food, "returning trader holds unsold Food");
+        var retLoaded = SimulationWorld.Load(new MemoryStream(SaveBytes(retWorld)));
+        Check(retLoaded.StateHash() == retWorld.StateHash(), "positive control: returning with unsold goods loads");
+        for (int t = 0; t < 200; t++) { retWorld.Step(); retLoaded.Step(); }
+        Check(retLoaded.StateHash() == retWorld.StateHash(), "positive control: returning trader continues identically");
+
+        // Positive control B: legitimate mid-read checkpoint loads and continues identically.
+        var readWorld = TwoTownSaveBase(farmPlots: 0, members: 2);
+        readWorld.SetStorageForTest(1, food: 300, wood: 100, coins: 100);
+        readWorld.SetStorageForTest(2, food: 300, wood: 100, coins: 100);
+        for (int t = 0; t < 40; t++) readWorld.Step();
+        Check(readWorld.ReadSnapshot().Chunks.SelectMany(c => c).Any(r => r.Action == (int)ActionKind.Read), "expected active reader");
+        var readLoaded = SimulationWorld.Load(new MemoryStream(SaveBytes(readWorld)));
+        Check(readLoaded.StateHash() == readWorld.StateHash(), "positive control: mid-read checkpoint loads");
+        for (int t = 0; t < 200; t++) { readWorld.Step(); readLoaded.Step(); }
+        Check(readLoaded.StateHash() == readWorld.StateHash(), "positive control: mid-read continues identically");
     }
 }

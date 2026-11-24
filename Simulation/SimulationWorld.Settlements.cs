@@ -329,25 +329,37 @@ public sealed partial class SimulationWorld
     private void ReadSettlements(BinaryReader r, Func<BinaryReader, int, int> count)
     {
         int n = count(r, 100_000);
+        var seenPlotCells = new HashSet<int>();
+        var centreCells = new HashSet<int>();
         for (int i = 0; i < n; i++)
         {
             var s = new Settlement { Id = r.ReadInt32() };
-            int nameLength = (int)r.ReadUInt32();
-            if (nameLength is < 1 or > 128) throw new InvalidDataException("Settlement name length invalid.");
+            uint rawNameLength = r.ReadUInt32();
+            if (rawNameLength is < 1u or > 128u) throw new InvalidDataException("Settlement name length invalid.");
+            int nameLength = (int)rawNameLength;
             s.Name = Encoding.UTF8.GetString(r.ReadBytes(nameLength));
             s.Faction = (Faction)r.ReadInt32();
             s.X = r.ReadInt32(); s.Y = r.ReadInt32();
             s.Food = r.ReadInt64(); s.Wood = r.ReadInt64();
             s.FoundedTick = r.ReadInt64();
             s.Coins = r.ReadInt64(); s.Members = r.ReadInt32(); s.Guards = r.ReadInt32(); s.TradersOut = r.ReadInt32(); s.Books = r.ReadInt32();
-            if (s.Coins < 0 || s.Members < 0 || s.Guards < 0 || s.TradersOut < 0) throw new InvalidDataException("Settlement counters invalid.");
-            if (s.Id != i + 1 || !Enum.IsDefined(s.Faction) || !InBounds(s.X, s.Y) || s.Food < 0 || s.Wood < 0)
+            if (s.Coins < 0 || s.Members < 0 || s.Guards < 0 || s.TradersOut < 0 || s.Books is < 0 or > 1000)
+                throw new InvalidDataException("Settlement counters invalid.");
+            if (s.Id != i + 1 || s.Faction is not (Faction.Human or Faction.Demon) || !InBounds(s.X, s.Y)
+                || !TerrainRules.IsPassable(terrain[Cell(s.X, s.Y)]) || s.Food < 0 || s.Wood < 0)
                 throw new InvalidDataException("Settlement invalid.");
+            int centreCell = Cell(s.X, s.Y);
+            if (!centreCells.Add(centreCell) || seenPlotCells.Contains(centreCell))
+                throw new InvalidDataException("Settlement centre overlaps another settlement or plot.");
             int plots = count(r, 32);
             for (int k = 0; k < plots; k++)
             {
                 var p = new FarmPlot { Cell = r.ReadInt32(), Crop = r.ReadInt32(), GrowScheduled = r.ReadBoolean() };
-                if (p.Cell < 0 || p.Cell >= terrain.Length || p.Crop < 0 || p.Crop > TownCfg.CropMax) throw new InvalidDataException("Farm plot invalid.");
+                if (p.Cell < 0 || p.Cell >= terrain.Length || terrain[p.Cell] != Terrain.Grass
+                    || p.Crop < 0 || p.Crop > TownCfg.CropMax || (p.GrowScheduled && p.Crop >= TownCfg.CropMax))
+                    throw new InvalidDataException("Farm plot invalid.");
+                if (centreCells.Contains(p.Cell) || !seenPlotCells.Add(p.Cell))
+                    throw new InvalidDataException("Farm plot overlaps centre or another plot.");
                 s.Plots.Add(p);
             }
             uint blockedCount = r.ReadUInt32();
