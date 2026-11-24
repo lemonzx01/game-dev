@@ -5,8 +5,8 @@ using Godot;
 
 namespace Game.Presentation;
 
-// Draws the bridge's most recent real WorldSnapshot with the project's placeholder pixel-art atlases
-// (Assets/Placeholders, CC0 / project-owned). Terrain is baked into one texture per map revision; resources,
+// Draws the bridge's most recent real WorldSnapshot with the project's pixel-art atlases
+// (Assets/CREDITS.md). Terrain is baked into one texture per map revision; resources,
 // farm plots, towns and creatures are drawn from simulation read models each frame. It never invents entities,
 // positions, stock or outcomes that are not in the simulation.
 public partial class MapRenderer : Node2D
@@ -18,15 +18,14 @@ public partial class MapRenderer : Node2D
     [Export] public float StartZoom = 3f; // integer zoom keeps the 24 px character art crisp
 
     // Atlas regions (see Assets/CREDITS.md).
-    private const int TileGrass = 0, TileShallow = 2, TileDeep = 3, TileForest = 4, TileMountain = 5, TileSnow = 6, TileFarmland = 7;
-    private static readonly Rect2 Storage = new(32, 32, 32, 32);
+    private const int TileForest = 3, TileMountain = 4, TileSnow = 5, TileShallow = 6, TileDeep = 7, TileFarmland = 8;
+    private const int ShoreFirst = 9, ShimmerFirst = 13;
     private static readonly Rect2 Ring = new(224, 0, 32, 32);
-    private static readonly Rect2 Oak = new(0, 0, 32, 32), Pine = new(32, 0, 32, 32), Berries = new(64, 0, 32, 32), EmptyBush = new(96, 0, 32, 32);
-    private static readonly Rect2 CropsGrowing = new(0, 32, 32, 32), CropsRipe = new(32, 32, 32, 32), Stump = new(96, 32, 32, 32);
+    private static Rect2 Prop(int slot) => new(slot * 32, 0, 32, 32);
 
     private SimulationBridge bridge = null!;
     private ObserverController? observer;
-    private Texture2D terrainAtlas = null!, creatures = null!, humanoid = null!, plants = null!, characters = null!;
+    private Texture2D terrainAtlas = null!, humanoid = null!, plants = null!, characters = null!;
     private ImageTexture terrain = null!;
     private int builtRevision = -1;
     private bool cameraPlaced;
@@ -39,10 +38,9 @@ public partial class MapRenderer : Node2D
     {
         bridge = GetNode<SimulationBridge>(BridgePath);
         observer = GetNodeOrNull<ObserverController>(ObserverPath);
-        terrainAtlas = GD.Load<Texture2D>("res://Assets/Placeholders/terrain_tiles_16x16_placeholder.png");
-        creatures = GD.Load<Texture2D>("res://Assets/Placeholders/creatures_buildings_placeholder.png");
+        terrainAtlas = GD.Load<Texture2D>("res://Assets/Art/environment_tiles.png");
         humanoid = GD.Load<Texture2D>("res://Assets/Placeholders/humanoid_modular_32x32_placeholder.png");
-        plants = GD.Load<Texture2D>("res://Assets/Placeholders/plants_flora_placeholder.png");
+        plants = GD.Load<Texture2D>("res://Assets/Art/environment_props.png");
         characters = GD.Load<Texture2D>("res://Assets/Art/characters_24.png");
         TextureFilter = TextureFilterEnum.Nearest;
         BuildTerrain();
@@ -66,35 +64,65 @@ public partial class MapRenderer : Node2D
     private void BuildTerrain()
     {
         var map = bridge.Map;
-        var atlas = terrainAtlas.GetImage();
+        using var atlas = terrainAtlas.GetImage();
         atlas.Convert(Image.Format.Rgba8);
-        int t = (int)CellSize;
+        const int t = 16;
         using var image = Image.CreateEmpty(map.Width * t, map.Height * t, false, Image.Format.Rgba8);
         for (int y = 0; y < map.Height; y++)
             for (int x = 0; x < map.Width; x++)
             {
-                int tile = map.At(x, y) switch
+                var kind = map.At(x, y);
+                int shore = kind == Terrain.Water ? Shore(map, x, y) : 0;
+                int tile = kind switch
                 {
-                    Terrain.Grass => TileGrass,
+                    Terrain.Grass => (int)(CellHash(x,y) % 3),
                     Terrain.Forest => TileForest,
                     Terrain.Mountain => TileMountain,
                     Terrain.Snow => TileSnow,
-                    _ => Shore(map, x, y) ? TileShallow : TileDeep,
+                    _ => shore != 0 ? TileShallow : TileDeep,
                 };
-                image.BlitRect(atlas, new Rect2I(tile * 16, 0, 16, 16), new Vector2I(x * t, y * t));
+                var dest = new Vector2I(x * t, y * t);
+                image.BlitRect(atlas, new Rect2I(tile * t, 0, t, t), dest);
+                for (int side = 0; side < 4; side++)
+                    if ((shore & (1 << side)) != 0)
+                        image.BlendRect(atlas, new Rect2I((ShoreFirst + side) * t, 0, t, t), dest);
             }
         terrain = ImageTexture.CreateFromImage(image);
         builtRevision = bridge.MapRevision;
     }
 
-    private static bool Shore(MapView map, int x, int y)
+    private static uint CellHash(int x, int y)
     {
-        foreach (var (dx, dy) in new[] { (0, -1), (-1, 0), (1, 0), (0, 1) })
-        {
-            int nx = x + dx, ny = y + dy;
-            if (nx >= 0 && ny >= 0 && nx < map.Width && ny < map.Height && map.At(nx, ny) != Terrain.Water) return true;
-        }
-        return false;
+        uint h = unchecked((uint)x * 0x85ebca6bu ^ (uint)y * 0xc2b2ae35u);
+        h ^= h >> 16;
+        return unchecked(h * 0x7feb352du) ^ (h >> 11);
+    }
+
+    // N, W, S, E match the counterclockwise rotations in the atlas generator.
+    private static int Shore(MapView map, int x, int y) =>
+        (y > 0 && map.At(x, y - 1) != Terrain.Water ? 1 : 0) |
+        (x > 0 && map.At(x - 1, y) != Terrain.Water ? 2 : 0) |
+        (y + 1 < map.Height && map.At(x, y + 1) != Terrain.Water ? 4 : 0) |
+        (x + 1 < map.Width && map.At(x + 1, y) != Terrain.Water ? 8 : 0);
+
+    private void DrawWaterShimmer()
+    {
+        var map = bridge.Map;
+        var local = GetGlobalTransformWithCanvas().AffineInverse() * GetViewportRect();
+        int left = Mathf.Max(0, Mathf.FloorToInt(local.Position.X / CellSize));
+        int top = Mathf.Max(0, Mathf.FloorToInt(local.Position.Y / CellSize));
+        int right = Mathf.Min(map.Width, Mathf.CeilToInt(local.End.X / CellSize));
+        int bottom = Mathf.Min(map.Height, Mathf.CeilToInt(local.End.Y / CellSize));
+        for (int y = top; y < bottom; y++)
+            for (int x = left; x < right; x++)
+            {
+                if (map.At(x, y) != Terrain.Water) continue;
+                uint hash = CellHash(x, y);
+                if (hash % 7 != 0) continue;
+                int frame = ((int)(clock * 2) + (int)(hash % 3)) % 3;
+                DrawTextureRectRegion(terrainAtlas, new Rect2(new Vector2(x, y) * CellSize, Vector2.One * CellSize),
+                    new Rect2((ShimmerFirst + frame) * 16, 0, 16, 16));
+            }
     }
 
     public override void _Process(double delta)
@@ -122,13 +150,14 @@ public partial class MapRenderer : Node2D
         WorldSnapshot snapshot = bridge.Snapshot;
         if (snapshot is null)
             return;
-        DrawTextureRect(terrain, new Rect2(Vector2.Zero, terrain.GetSize()), false);
+        DrawTextureRect(terrain, new Rect2(Vector2.Zero, new Vector2(bridge.Map.Width, bridge.Map.Height) * CellSize), false);
+        DrawWaterShimmer();
 
         if (nodesTick != snapshot.Tick) { nodes = bridge.ResourceNodes(); nodesTick = snapshot.Tick; }
         foreach (var n in nodes)
         {
-            if (n.Kind == ResourceKind.Food) DrawSprite(plants, n.Amount > 0 ? Berries : EmptyBush, n.X, n.Y, 1.1f);
-            else if (n.Kind == ResourceKind.Wood) DrawSprite(plants, n.Amount == 0 ? Stump : ((n.X + n.Y) % 3 == 0 ? Pine : Oak), n.X, n.Y, 1.4f);
+            if (n.Kind == ResourceKind.Food) DrawSprite(plants, Prop(n.Amount > 0 ? 3 : 4), n.X, n.Y, 2f);
+            else if (n.Kind == ResourceKind.Wood) DrawSprite(plants, Prop(n.Amount == 0 ? 2 : CellHash(n.X, n.Y) % 3 == 0 ? 1 : 0), n.X, n.Y, 2f);
         }
 
         DrawSettlements();
@@ -153,9 +182,9 @@ public partial class MapRenderer : Node2D
             foreach (var (x, y, crop) in bridge.FarmPlots(town.Id))
             {
                 DrawTextureRectRegion(terrainAtlas, new Rect2(new Vector2(x, y) * CellSize, Vector2.One * CellSize), new Rect2(TileFarmland * 16, 0, 16, 16));
-                if (crop > 0) DrawSprite(plants, crop >= 3 ? CropsRipe : CropsGrowing, x, y, 1f);
+                if (crop > 0) DrawSprite(plants, Prop(crop >= 3 ? 6 : 5), x, y, 2f);
             }
-            DrawSprite(creatures, Storage, town.X, town.Y, 2f);
+            DrawSprite(plants, Prop(town.Faction == Faction.Human ? 7 : 8), town.X, town.Y, 2f);
             string label = $"{town.Name} ({town.Population})";
             int fontSize = (int)Mathf.Clamp(14 * scale, 8, 96);
             var at = new Vector2(town.X * CellSize - CellSize, (town.Y - 1.6f) * CellSize);

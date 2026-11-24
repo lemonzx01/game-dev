@@ -211,3 +211,6 @@ None reported because implementation has not started; this does not mean the gam
 
 ## Performance baseline
 Not measured. Record device CPU, RAM, engine/SDK, build type, seed, entity count, simulation speed, tick percentiles, FPS/frame time, allocations, memory and path queue. Keep comparable scenarios. Never fill with invented numbers.
+## T018-env | Codex | Environment art verified locally; integration pending
+Base 69e3a51. Pillow generator, two CC0 atlases and renderer integration. Debug build clean,
+four Godot acceptance markers and 82/82 simulation groups passed. See docs/handoffs/T018-env.md.
