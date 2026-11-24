@@ -9,7 +9,7 @@ T001–T014 DONE and merged to main (2026-11-24; T003–T014 merged by owner ins
 **2026-11-24 | Claude Code (owner-requested) | T018 part 1 | main | merged**
 
 - Playable build: God mode spawn tool and terrain brush via validated God commands with feed feedback, F5/F9 in-game save/load (drops old cursors, corrupt saves refused), terrain texture refresh, `Play.cmd`, Windows export preset, docs/PLAYING.md. Godot headless: GodTools, T007, T008 acceptances pass on main; simulation 68/68.
-- Blocked on owner: standalone export needs Godot 4.7.2 .NET export templates (1.2 GB download, approval required); 15–30 min playtest.
+- Standalone export done after owner-approved template download (SHA-512 verified): `build/windows/FantasyWorldSimulator.exe` runs. Remaining: owner 15–30 min playtest.
 
 **2026-11-24 | Claude Code (owner-requested) | T008 + T014 | main | DONE**
 
