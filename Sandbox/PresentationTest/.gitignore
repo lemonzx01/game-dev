@@ -1,0 +1,5 @@
+# Ignore Godot & .NET generated build/import caches inside Sandbox
+.godot/
+bin/
+obj/
+*.user

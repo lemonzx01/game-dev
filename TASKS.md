@@ -10,7 +10,7 @@ T001 architecture is APPROVED and A007 rev 2 is Accepted by owner (2026-11-24); 
 | T004 | Must | Codex | Entity state, needs, health, death | T003 | food/water consumption, elapsed time, no dead actions, no negative stock | TODO |
 | T005 | Must | Codex | Utility AI and action lifecycle | T004 | hunger selects reachable food, rest and flee feasible, interrupt, no rapid oscillation | TODO |
 | T006 | Must | Codex | Spatial grid and bounded movement/pathfinding | T003,T005 | nearby results correct, blocked path handled, request budget enforced | TODO |
-| T007 | Must | Antigravity | Godot project, map renderer, camera, simulation bridge | T001; N3; integrate T003 | actual snapshots displayed, camera/input independent of state, placeholders allowed; events via ReadEvents cursor (N3) | TODO |
+| T007 | Must | Antigravity | Godot project, map renderer, camera, simulation bridge | T001; N3 (done); integrate T003 | actual snapshots displayed, camera/input independent of state, placeholders allowed; events via ReadEvents cursor (N3) | BLOCKED |
 | T008 | Must | Antigravity | Observer UI, pause/speed, selection, follow, event feed | T005,T007 | inspect and follow any living entity; tracking doesn't affect sim; dead history retained | TODO |
 | T009 | Must | Codex | Species data + predator/prey + resources | T004–T006 | 3–5 species including farm/wild animal and predator, kills consume/transfer real resources | TODO |
 | T010 | Must | Codex | Basic personality/emotions/memory | T005,T009 | two personalities can choose differently under defined inputs; danger event changes emotion; verify per-entity memory/relationship caps, eviction and durable history (Architecture §9) | TODO |
@@ -50,4 +50,4 @@ Full rationale in PROGRESS.md (Claude Code T001 Re-Review). None of these are im
 - N2 — History archive must be bound to the save timeline: on load ignore/truncate records with EventSequence ≥ checkpoint NextEventSequence; write the archive only at save boundaries (no file I/O inside Step). MVP may keep all death summaries inside the checkpoint. Test: save A → X dies → save B → load A → ReadHistory/ReadEntityDetails show no death of X.
 
 **Antigravity, before T007:**
-- N3 — Update docs/PRESENTATION_PLAN.md (parent checkout, lines ~73 and ~85): drain `ReadEvents(cursor, limit)` per frame and handle Gap instead of reading events from `ReadSnapshot()` after every Step; request at most one snapshot per frame.
+- N3 — **[DONE on `prep/N3-presentation-contract-sync`]** Updated `docs/PRESENTATION_PLAN.md`: drain `ReadEvents(cursor, limit)` per frame independently of drawing, handle `Gap` + `ReadHistory` milestone catch-up + `OutcomeUnknown` receipts, request `ReadSnapshot()` at most once per frame, and verified Gap UI / animation / optimization in isolated `Sandbox/PresentationTest/` (Mock Data only).

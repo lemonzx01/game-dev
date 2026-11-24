@@ -1,0 +1,24 @@
+; Engine configuration file.
+; Isolated UI/Graphics/Camera Presentation Test Sandbox (Mock Data Only).
+
+config_version=5
+
+[application]
+
+config/name="FantasyWorldSimulator Presentation Sandbox"
+run/main_scene="res://Scenes/SandboxMain.tscn"
+config/features=PackedStringArray("4.7", "C#", "Forward Plus")
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+
+[dotnet]
+
+project/assembly_name="PresentationTest"
+
+[rendering]
+
+textures/canvas_textures/default_texture_filter=0

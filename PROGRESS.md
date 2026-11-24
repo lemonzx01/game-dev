@@ -2,11 +2,23 @@
 
 ## Current state
 
-**T001 · ARCHITECTURE APPROVED · A007 ACCEPTED (owner 2026-11-24) · BLOCKED (ยังไม่มี project ให้ build)** — ติดตั้ง .NET SDK 10.0.404 และ Godot 4.7.2 .NET แล้ว (ดู handoff ล่าสุด) แต่ยังไม่มี build จริง T002 อยู่ใน TODO
+**T001 · ARCHITECTURE APPROVED · A007 ACCEPTED (owner 2026-11-24) · BLOCKED (ยังไม่มี project ให้ build)** — ติดตั้ง .NET SDK 10.0.404 และ Godot 4.7.2 .NET แล้ว (ดู handoff ล่าสุด) แต่ยังไม่มี build จริงของ Simulation T002 อยู่ใน TODO; **N3 ของ Antigravity เสร็จแล้ว** บน `prep/N3-presentation-contract-sync` และ **`T007 = BLOCKED`** (รอ `Simulation/Simulation.csproj` / `T003` จาก `Codex`)
 
-ข้อกำหนดที่ยกไปจากรีวิว: N1+N4 → T003, N2 → T013, N3 → Antigravity ก่อน T007, acceptance tests 9 ข้อ → T002 (ดู TASKS.md "Requirements carried from T001 review") ไม่มีข้อใด implement หรือทดสอบแล้ว
+ข้อกำหนดที่ยกไปจากรีวิว: N1+N4 → T003, N2 → T013, N3 → DONE (Antigravity presentation prep), acceptance tests 9 ข้อ → T002 (ดู TASKS.md "Requirements carried from T001 review") ไม่มีโค้ด Simulation ใด implement หรือทดสอบแล้ว
 
 ## Handoff log
+
+**2026-11-24 | Google Antigravity | Prep + N3 (pre-T007) | prep/N3-presentation-contract-sync (base 81709a9) | BLOCKED (T007 waiting on T002/T003 Simulation.csproj)**
+
+- รับ commit ล่าสุดจาก `feat/T001-simulation-contract` (`81709a9`) มายัง branch แยก `prep/N3-presentation-contract-sync` โดยไม่แตะต้อง `T001-review/` และ `main`
+- **N3 เสร็จสมบูรณ์:** ปรับปรุง [docs/PRESENTATION_PLAN.md](docs/PRESENTATION_PLAN.md) ให้ตรงกับ `A007 revision 2` (แยก `ReadSnapshot()` ที่เรียก `<= 1` ครั้ง/frame ออกจาก `ReadEvents(afterSequence, limit)`, ออกแบบ `EventGapRecovery` แจ้งช่วงหาย + เปลี่ยน pending receipts เป็น `OutcomeUnknown` + บังคับ `ReadSnapshot()` ใหม่ + `ReadEntityDetails` ตัวติดตาม + กู้คืน milestone ด้วย `ReadHistory` + reset cursor/cache ตอน load save)
+- **เตรียม Asset ชั่วคราว (`CC0 1.0 / Project-owned`):** เพิ่ม 6 placeholder PNG atlases ใน `Assets/Placeholders/` (Terrain `16×16`, Modular Human/Demon `32×32`, Animals + True Dragon `64×64` + Buildings, Plants/Flora `32×32`, UI Icons `16×16`, Combat/Magic/Weather VFX `16×16`) พร้อมบันทึกแหล่งที่มาและสิทธิ์ใน `Assets/CREDITS.md`
+- **พื้นที่ทดสอบแยก (`Sandbox/PresentationTest/` — Mock Data เท่านั้น, ไม่เชื่อม `ISimulation`):**
+  - ตรวจ System `.NET SDK 10.0.404` (`C:\Program Files\dotnet\dotnet.exe`) + `Godot 4.7.2 .NET` (`godot-mono.exe` = `4.7.2.stable.mono.official.ed1daf0bf`) คอมไพล์ `-c Release` และ `-c Debug` ผ่าน (`0 Warning(s), 0 Error(s)`)
+  - รัน `godot-mono.exe --headless --path Sandbox/PresentationTest -- --run-sandbox-tests` → **`[SANDBOX_TESTS_PASSED]`**: ผ่านทั้ง 6 atlas dimensions, Mock Event Gap UI / Receipt Unknown recovery, Camera zoom-to-cursor (`< 0.01 px` drift), Modular Character 7 layers + Sleep/Walk/Dead poses, และ Benchmark 5,000 mock sprites (`Visible=4,021`: `CulledNodePool` `0.236 ms` @ `300 nodes`, `MultiMeshBulkBuffer` `0.440 ms` @ `2 nodes` vs `NaiveNodes` `2.152 ms` @ `5,000 nodes`)
+  - รัน Vulkan Forward+ (`NVIDIA GeForce RTX 3060 Laptop GPU`) `--capture-screenshot` ตรวจภาพ UI, Observer/God HUD, NPC Inspector (`Dead History`), Modular Characters และ VFX แล้ว (`DrawCalls=118`)
+- **งานที่ยัง BLOCKED:** `T007` (Production `Game/` bridge กับ `ISimulation`) ยัง `BLOCKED` จนกว่า `Codex` จะสร้าง `Simulation/Simulation.csproj` (`T002`/`T003`)
+- **Exact next step:** รอ `Codex` ดำเนินการ `T002` และ `T003` จากนั้น merge/sync branch แล้วเริ่ม `T007` บน `feat/T007-godot-presentation`
 
 **2026-11-24 | Claude Code | T001 environment install | feat/T001-simulation-contract**
 
