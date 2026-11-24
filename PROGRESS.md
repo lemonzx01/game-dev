@@ -6,6 +6,11 @@ T001–T014 DONE and merged to main (2026-11-24; T003–T014 merged by owner ins
 
 ## Handoff log
 
+**2026-11-24 | Claude Code | T016 trade and guards + visual polish | main | merged (self-reviewed, A009)**
+
+- Visual polish: pixel-art terrain/sprites from placeholder atlases, readable panels, F3 debug, day/night (docs/handoffs/T018-visuals.md).
+- T016: settlement coins, trade trips with conserved goods and coins, guards defending towns (Combat deaths). 78/78 tests; all Godot acceptances pass. Handoff docs/handoffs/T016.md.
+
 **2026-11-24 | Claude Code | T015 settlements | main | merged (self-reviewed, A009)**
 
 - Human/demon settlements with storage, seasonal farm plots and jobs (deliver, harvest, gather, woodcut); identical rules for both peoples; conservation proven over 3,000 ticks; Godot towns display and God founding tool. 74/74 tests; all Godot acceptances pass. Handoff docs/handoffs/T015.md.
