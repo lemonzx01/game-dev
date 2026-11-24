@@ -2,11 +2,15 @@
 
 ## Current state
 
-T001 DONE · T002 DONE · A007 revision 2 Accepted · A008: no fixed AI roles (AGENTS.md) · main now holds T002 + Sandbox/N3 + shared workflow docs · T003 REVIEW on `feat/T003-world-clock` (16/16 test groups, waiting for independent review) · T007 can start once T003 merges.
-
-ข้อกำหนดที่ยกไปจากรีวิว: N1+N4 → T003 (implemented on feat/T003-world-clock), N2 → T013, N3 → DONE.
+T001–T007 and T009–T013 DONE and merged to main (2026-11-24, owner-approved merge without independent review). Main verified: `dotnet test Tests/Simulation.Tests -c Release -m:1` → 67/67 groups; `dotnet build Game/Game.csproj` and Sandbox build succeed; Godot headless acceptance `T007_ACCEPTANCE_PASS`. Next: T008 observer UI, T014 profiling, then T015+.
 
 ## Handoff log
+
+**2026-11-24 | Claude Code (owner-requested integration) | merge T003–T013 + T007 | main | DONE**
+
+- Merged `feat/T012-seasons-climate` (linear stack T003 → T004 → T005 → T006 → T009 → T011 → T010 → T013 → T012) and `feat/T007-godot-bridge` into main with no conflicts. The owner instructed the merge; no independent agent review was done, so a follow-up review is recommended.
+- Verified on main: simulation suite 67/67 (exit 0), Game and Sandbox builds, Godot headless acceptance pass. Per-task evidence: docs/handoffs/T003.md … T013.md.
+- Codex's earlier T003/T007 claims were taken over (Codex idle since 17:34; its fix branch was empty, its Game draft continued into T007). The `worktrees/T007-godot-bridge` clone and branch `wip/orch-drafts` are superseded.
 
 **2026-11-24 | Claude Code (owner-requested) | Integrate into main | main | merge**
 
