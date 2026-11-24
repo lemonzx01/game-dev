@@ -24,6 +24,6 @@ public partial class TownsPanel : Label
         shownTick = bridge.Snapshot.Tick;
         Visible = bridge.Settlements().Count > 0;
         Text = string.Join("\n", bridge.Settlements().Select(t =>
-            $"{t.Name} ({t.Faction})  pop {t.Population}  food {t.Food}  wood {t.Wood}  farm {t.Farmers} gather {t.Gatherers} wood {t.Woodcutters}  crops {t.CropsReady}"));
+            $"{t.Name} ({t.Faction})  pop {t.Population}  food {t.Food}  wood {t.Wood}  coins {t.Coins}  guards {t.Guards}  traders out {t.TradersOut}"));
     }
 }

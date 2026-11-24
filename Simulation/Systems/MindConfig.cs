@@ -3,7 +3,7 @@ using System.Collections.Immutable;
 namespace FantasyWorld.Simulation;
 
 /// <summary>Current action shown in snapshot rows (EntityRow.Action). Values are part of the hash/event schema.</summary>
-public enum ActionKind { Idle = 0, Wander = 1, Eat = 2, Drink = 3, Rest = 4, Flee = 5, Hunt = 6, Mate = 7, Work = 8 }
+public enum ActionKind { Idle = 0, Wander = 1, Eat = 2, Drink = 3, Rest = 4, Flee = 5, Hunt = 6, Mate = 7, Work = 8, Defend = 9 }
 
 /// <summary>
 /// Utility AI tuning. Counts and ticks only (never milliseconds). Fatigue uses the same 0..1,000,000 milli scale

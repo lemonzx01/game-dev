@@ -6,10 +6,10 @@ namespace FantasyWorld.Simulation;
 public enum Faction { None = 0, Human = 1, Demon = 2 }
 
 /// <summary>A member's current occupation, chosen from what the settlement needs.</summary>
-public enum Job { None = 0, Farmer = 1, Gatherer = 2, Woodcutter = 3 }
+public enum Job { None = 0, Farmer = 1, Gatherer = 2, Woodcutter = 3, Guard = 4, Trader = 5 }
 
 /// <summary>What a Work action is doing; values are part of the hash schema.</summary>
-public enum WorkGoal { None = 0, Deliver = 1, Harvest = 2, GatherFood = 3, GatherWood = 4 }
+public enum WorkGoal { None = 0, Deliver = 1, Harvest = 2, GatherFood = 3, GatherWood = 4, TradeLoad = 5, TradeTravel = 6, ReturnHome = 7 }
 
 /// <summary>Settlement tuning (ticks, units). Defaults are provisional.</summary>
 public sealed record SettlementConfig(int Radius = 10, int FarmPlots = 6, int CropMax = 10, int CropGrowTicks = 150,
@@ -36,7 +36,8 @@ public sealed record SettlementConfig(int Radius = 10, int FarmPlots = 6, int Cr
 
 /// <summary>Read model for UIs. Population and job counts are live members.</summary>
 public sealed record SettlementView(int Id, string Name, Faction Faction, int X, int Y, int Radius, long Food, long Wood,
-    int Population, int Farmers, int Gatherers, int Woodcutters, int CropsReady, long FoundedTick);
+    int Population, int Farmers, int Gatherers, int Woodcutters, int CropsReady, long FoundedTick,
+    long Coins = 0, int Guards = 0, int TradersOut = 0);
 
 internal sealed class FarmPlot
 {
@@ -52,6 +53,8 @@ internal sealed class Settlement
     public Faction Faction;
     public int X, Y;          // storage / town centre
     public long Food, Wood;   // storage stock, never negative
+    public long Coins;        // treasury (T016): founding grant, then only trade payments
+    public int Members, Guards, TradersOut;
     public long FoundedTick;
     public readonly List<FarmPlot> Plots = new();
 }
@@ -85,7 +88,7 @@ public sealed partial class SimulationWorld
         if (!TerrainRules.IsPassable(terrain[Cell(c.X, c.Y)])) return CommandReason.Impassable;
         foreach (var s in settlements)
             if (Math.Max(Math.Abs(s.X - c.X), Math.Abs(s.Y - c.Y)) < 2 * TownCfg.Radius) return CommandReason.TooClose;
-        var town = new Settlement { Id = settlements.Count + 1, Name = c.Name, Faction = c.Faction, X = c.X, Y = c.Y, FoundedTick = now };
+        var town = new Settlement { Id = settlements.Count + 1, Name = c.Name, Faction = c.Faction, X = c.X, Y = c.Y, FoundedTick = now, Coins = TradeCfg.StartingCoins };
         // Farm plots: nearest grass tiles (Manhattan, then cell) within 3, excluding the centre and resource tiles.
         var candidates = new List<(int Distance, int Cell)>();
         for (int dy = -3; dy <= 3; dy++)
@@ -121,6 +124,7 @@ public sealed partial class SimulationWorld
         }
         if (best is null) return;
         e.SettlementId = best.Id;
+        best.Members++;
         e.HomeX = best.X;
         e.HomeY = best.Y;
     }
@@ -166,12 +170,16 @@ public sealed partial class SimulationWorld
     /// <summary>What the settlement needs from this member now (deterministic priority), or None.</summary>
     private WorkGoal PlanWork(EntityState e)
     {
-        if (SettlementOf(e) is not { } s || StageOf(e, tick + 1) == LifeStage.Juvenile) return WorkGoal.None;
-        if (e.CarryAmount > 0) return WorkGoal.Deliver;
+        if (SettlementOf(e) is not { } s || StageOf(e, tick + 1) == LifeStage.Juvenile || e.Job == Job.Guard) return WorkGoal.None;
+        int far = Math.Max(Math.Abs(e.X - s.X), Math.Abs(e.Y - s.Y));
+        if (e.CarryAmount > 0)
+            return e.TradePartner != 0 ? WorkGoal.TradeTravel : far > MindCfg.PerceptionRadius ? WorkGoal.ReturnHome : WorkGoal.Deliver;
+        if (e.OnTrip || far > TownCfg.Radius) return WorkGoal.ReturnHome;
         foreach (var p in s.Plots)
             if (p.Crop >= TownCfg.HarvestMinCrop) return WorkGoal.Harvest;
         if (s.Food < TownCfg.FoodTarget) return WorkGoal.GatherFood;
         if (s.Wood < TownCfg.WoodTarget) return WorkGoal.GatherWood;
+        if (TradeDeal(s) is not null) return WorkGoal.TradeLoad;
         return WorkGoal.None;
     }
 
@@ -191,6 +199,12 @@ public sealed partial class SimulationWorld
             case WorkGoal.GatherWood:
                 int n = resources.Find(cell, ResourceKind.Wood);
                 return n >= 0 && resources[n].Amount > 0;
+            case WorkGoal.TradeLoad:
+            case WorkGoal.ReturnHome:
+                return cell == Cell(s.X, s.Y);
+            case WorkGoal.TradeTravel:
+                var partner = settlements[e.TradePartner - 1];
+                return cell == Cell(partner.X, partner.Y);
             default:
                 return false;
         }
@@ -218,6 +232,15 @@ public sealed partial class SimulationWorld
                 Load(e, ResourceKind.Food, crop);
                 ScheduleCrop(s, hit.Index, now);
                 Emit(new WorldEvent(0, now, EventKinds.Harvested, 0, e.Id.Value, s.Id, e.X, e.Y, (int)ResourceKind.Food, crop));
+                break;
+            case WorkGoal.TradeLoad:
+                LoadTrade(e, s, now);
+                break;
+            case WorkGoal.TradeTravel when e.TradePartner != 0:
+                SellTrade(e, s, now);
+                break;
+            case WorkGoal.ReturnHome:
+                EndTrip(e, s, now);
                 break;
             case WorkGoal.GatherFood:
             case WorkGoal.GatherWood:
@@ -269,7 +292,8 @@ public sealed partial class SimulationWorld
         WorkGoal.Harvest => Job.Farmer,
         WorkGoal.GatherFood => Job.Gatherer,
         WorkGoal.GatherWood => Job.Woodcutter,
-        _ => current, // delivering keeps the job that produced the load
+        WorkGoal.TradeLoad or WorkGoal.TradeTravel => Job.Trader,
+        _ => current, // delivering or returning keeps the job that produced the trip
     };
 
     // ---- Canonical encoding, reads -------------------------------------------------------------
@@ -287,6 +311,7 @@ public sealed partial class SimulationWorld
             w.Write(s.X); w.Write(s.Y);
             w.Write(s.Food); w.Write(s.Wood);
             w.Write(s.FoundedTick);
+            w.Write(s.Coins); w.Write(s.Members); w.Write(s.Guards); w.Write(s.TradersOut);
             w.Write((uint)s.Plots.Count);
             foreach (var p in s.Plots) { w.Write(p.Cell); w.Write(p.Crop); w.Write(p.GrowScheduled); }
         }
@@ -305,6 +330,8 @@ public sealed partial class SimulationWorld
             s.X = r.ReadInt32(); s.Y = r.ReadInt32();
             s.Food = r.ReadInt64(); s.Wood = r.ReadInt64();
             s.FoundedTick = r.ReadInt64();
+            s.Coins = r.ReadInt64(); s.Members = r.ReadInt32(); s.Guards = r.ReadInt32(); s.TradersOut = r.ReadInt32();
+            if (s.Coins < 0 || s.Members < 0 || s.Guards < 0 || s.TradersOut < 0) throw new InvalidDataException("Settlement counters invalid.");
             if (s.Id != i + 1 || !Enum.IsDefined(s.Faction) || !InBounds(s.X, s.Y) || s.Food < 0 || s.Wood < 0)
                 throw new InvalidDataException("Settlement invalid.");
             int plots = count(r, 32);
@@ -334,7 +361,7 @@ public sealed partial class SimulationWorld
                 else if (e.Job == Job.Woodcutter) woodcutters++;
             }
             views.Add(new SettlementView(s.Id, s.Name, s.Faction, s.X, s.Y, TownCfg.Radius, s.Food, s.Wood, pop, farmers, gatherers, woodcutters,
-                s.Plots.Count(p => p.Crop >= TownCfg.HarvestMinCrop), s.FoundedTick));
+                s.Plots.Count(p => p.Crop >= TownCfg.HarvestMinCrop), s.FoundedTick, s.Coins, s.Guards, s.TradersOut));
         }
         return views;
     }

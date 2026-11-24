@@ -90,14 +90,14 @@ public sealed partial class SimulationWorld
 
     private void Attack(EntityState attacker, EntityState prey, long now)
     {
-        long damage = SpeciesOf(attacker)?.AttackDamage ?? 0;
+        long damage = AttackPower(attacker);
         if (damage <= 0 || prey.LifeState != LifeStates.Alive) return;
         var v = prey.Vitals.At(now, options.Vitals);
         long health = Math.Max(0, v.Health - damage);
         Emit(new WorldEvent(0, now, EventKinds.Attacked, 0, attacker.Id.Value, prey.Id.Value, prey.X, prey.Y, 0, v.Health - health));
         if (health == 0)
         {
-            Die(prey, now, DeathCause.Predation, attacker.Id.Value);
+            Die(prey, now, attacker.Job == Job.Guard ? DeathCause.Combat : DeathCause.Predation, attacker.Id.Value);
             attacker.Mind.NoFoodUntil = 0; // the killer knows where fresh meat is
             return;
         }

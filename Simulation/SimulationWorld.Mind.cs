@@ -159,13 +159,17 @@ public sealed partial class SimulationWorld
         var current = e.Mind.Kind;
         if (threat is null && current is not (ActionKind.Idle or ActionKind.Wander) && now < e.Mind.CommitUntil)
             return; // committed
-        if (threat is not null && current == ActionKind.Flee && e.Mind.TargetEntity == threat.Id.Value)
+        if (threat is not null && current == ActionKind.Flee && e.Mind.TargetEntity == threat.Id.Value && e.Job != Job.Guard)
             return; // already fleeing this threat
 
+        MaybeBecomeGuard(e, now);
+        var townThreat = TownThreat(e);
         var v = e.Vitals.At(now, options.Vitals);
         long fatigue = FatigueAt(e.Mind, now);
-        Span<(int Score, ActionKind Kind)> candidates = stackalloc (int, ActionKind)[8];
+        Span<(int Score, ActionKind Kind)> candidates = stackalloc (int, ActionKind)[9];
         int n = 0;
+        if (townThreat is not null) // guards stand and fight threats inside the town (T016)
+            candidates[n++] = (TradeCfg.DefendScore, ActionKind.Defend);
         if (threat is not null)
             candidates[n++] = (FleeScore(e, distance, now), ActionKind.Flee); // personality and fear decide how close is too close
         if (v.Thirst >= cfg.DrinkStartNeed || current == ActionKind.Drink)
@@ -223,6 +227,11 @@ public sealed partial class SimulationWorld
                 if (MateFor(e, now) is not { } mate) return false;
                 huntTarget = mate.Id.Value;
                 break;
+            case ActionKind.Defend:
+                if (TownThreat(e) is not { } intruder) return false;
+                huntTarget = intruder.Id.Value;
+                Emit(new WorldEvent(0, now, EventKinds.GuardAlert, 0, e.Id.Value, intruder.Id.Value, intruder.X, intruder.Y, e.SettlementId));
+                break;
             case ActionKind.Work:
                 if (OnCooldown(e.Mind, kind, now) || PlanWork(e) is not (var goal and not WorkGoal.None)) return false;
                 e.WorkGoal = goal;
@@ -239,7 +248,7 @@ public sealed partial class SimulationWorld
         e.Action = (int)kind;
         e.Mind.Path = kind == ActionKind.Wander ? [wanderCell] : path;
         e.Mind.PathIndex = 0;
-        e.Mind.TargetEntity = kind is ActionKind.Hunt or ActionKind.Mate ? huntTarget : threat?.Id.Value ?? 0;
+        e.Mind.TargetEntity = kind is ActionKind.Hunt or ActionKind.Mate or ActionKind.Defend ? huntTarget : threat?.Id.Value ?? 0;
         e.Mind.HuntUntil = now + (kind == ActionKind.Mate ? options.Ecology.MateGiveUpTicks : options.Ecology.HuntGiveUpTicks);
         e.Mind.AttackReadyTick = now;
         e.Mind.FleeStepsDone = 0;
@@ -292,6 +301,7 @@ public sealed partial class SimulationWorld
                 FinishAction(e, now); // recovery reached the target
                 return;
             case ActionKind.Hunt:
+            case ActionKind.Defend:
                 HuntStep(e, now);
                 return;
             case ActionKind.Mate:

@@ -32,26 +32,38 @@ public sealed partial class SimulationWorld
         long remaining = MindCfg.PathNodeBudgetPerTick;
         LastPathExpansions = 0;
         LastPathsServed = 0;
-        while (pathQueue.Count > 0 && remaining >= MindCfg.SearchNodeBudget)
+        routeSearchesLeft = TradeCfg.RouteSearchesPerTick;
+        while (pathQueue.Count > 0)
         {
-            var request = pathQueue.Dequeue();
+            var request = pathQueue.Peek();
             int i = FindLive(request.EntityId);
-            if (i < 0) continue;
-            var e = entities[i];
+            var e = i >= 0 ? entities[i] : null;
             // Stale: entity died, switched action (e.g. fled) or already re-requested.
-            if (e.LifeState != LifeStates.Alive || !e.Mind.AwaitingPath || e.Mind.Kind != request.Kind || e.Mind.StepToken != request.Token)
+            if (e is null || e.LifeState != LifeStates.Alive || !e.Mind.AwaitingPath || e.Mind.Kind != request.Kind || e.Mind.StepToken != request.Token)
+            {
+                pathQueue.Dequeue();
                 continue;
+            }
+            // Trade trips search the whole map (T016) under their own per-tick count; the FIFO order is kept either way.
+            bool longRoute = request.Kind == ActionKind.Work && IsLongRoute(e.WorkGoal);
+            if (longRoute ? routeSearchesLeft == 0 : remaining < MindCfg.SearchNodeBudget) break;
+            pathQueue.Dequeue();
+            if (longRoute) routeSearchesLeft--;
             navigation ??= new Navigation(terrain.Length);
             var path = navigation.FindNearest(terrain, options.MapWidth, options.MapHeight, e.X, e.Y,
-                MindCfg.PerceptionRadius, MindCfg.SearchNodeBudget,
+                longRoute ? Math.Max(options.MapWidth, options.MapHeight) : MindCfg.PerceptionRadius,
+                longRoute ? terrain.Length : MindCfg.SearchNodeBudget,
                 cell => request.Kind switch
                 {
                     ActionKind.Eat => CanEatAt(e, cell),
                     ActionKind.Work => IsWorkGoal(e, cell),
                     _ => CanConsumeAt(cell, ResourceKind.Water),
                 }, out int expanded);
-            remaining -= expanded;
-            LastPathExpansions += expanded;
+            if (!longRoute)
+            {
+                remaining -= expanded;
+                LastPathExpansions += expanded;
+            }
             LastPathsServed++;
             e.Mind.AwaitingPath = false;
             if (path is null)
