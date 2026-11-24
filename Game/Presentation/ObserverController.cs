@@ -68,8 +68,11 @@ public partial class ObserverController : Node2D
         return null;
     }
 
+    private int seenGeneration;
+
     public override void _Process(double delta)
     {
+        if (seenGeneration != bridge.WorldGeneration) { seenGeneration = bridge.WorldGeneration; Select(0); } // world replaced by a load
         if (Following && SelectedRow() is { } row)
             camera.Position = new Vector2(row.X + 0.5f, row.Y + 0.5f) * CellSize;
         else if (Following)

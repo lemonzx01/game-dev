@@ -25,7 +25,28 @@ public partial class EventFeed : Label
         if (bridge.LastGap is { } gap) changed |= Add($"(events {gap.From}-{gap.Through} lost; view rebuilt from snapshot)");
         foreach (var e in bridge.EventsThisFrame)
             if (Format(e) is { } line) changed |= Add(line);
+        foreach (var (command, outcome) in bridge.PlayerOutcomesThisFrame)
+            changed |= Add(FormatPlayer(command, outcome));
         if (changed) Text = string.Join("\n", lines);
+    }
+
+    /// <summary>Host messages (save/load results, refused tool use).</summary>
+    public void Note(string message)
+    {
+        Add(message);
+        Text = string.Join("\n", lines);
+    }
+
+    public string FormatPlayer(GameCommand command, in WorldEvent outcome)
+    {
+        bool ok = outcome.Kind == EventKinds.CommandApplied;
+        string what = command switch
+        {
+            SpawnEntityCommand s => ok ? $"spawned {bridge.SpeciesName(s.SpeciesKey)} #{outcome.Target} at {s.X},{s.Y}" : $"spawn {bridge.SpeciesName(s.SpeciesKey)} at {s.X},{s.Y}",
+            SetTerrainCommand t => $"terrain {t.X},{t.Y} -> {t.Terrain}",
+            _ => command.Kind.ToString(),
+        };
+        return ok ? $"t{outcome.Tick}: God {what}" : $"t{outcome.Tick}: God {what} rejected ({(CommandReason)outcome.Reason})";
     }
 
     private bool Add(string line)
@@ -40,7 +61,6 @@ public partial class EventFeed : Label
         EventKinds.EntityBorn => $"t{e.Tick}: {SpeciesOf(e.Target)} #{e.Target} born to #{e.Actor}",
         EventKinds.EntityDied => $"t{e.Tick}: {SpeciesOf(e.Target)} #{e.Target} died ({(DeathCause)e.Reason})" + (e.Actor != 0 ? $" by #{e.Actor}" : ""),
         EventKinds.Attacked => $"t{e.Tick}: #{e.Actor} attacked #{e.Target}",
-        EventKinds.CommandRejected => $"t{e.Tick}: God command {e.CommandSequence} rejected ({(CommandReason)e.Reason})",
         EventKinds.EventsDropped => $"t{e.Tick}: {e.Amount} minor events skipped",
         _ => null, // applied commands, eating, drinking, wandering stay out of the feed (inspector shows them)
     };
