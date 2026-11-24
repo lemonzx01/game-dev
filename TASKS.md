@@ -5,7 +5,7 @@ T001 is DONE. A007 revision 2 is Accepted. See PROGRESS.md for verified toolchai
 | ID | Priority | Default owner | Task | Depends | Acceptance (summary) | Status |
 |---|---|---|---|---|---|---|
 | T001 | Must | Codex + Claude review | Verify toolchain, solution layout, agree contracts | — | actual version/build commands, contract signatures recorded, no Godot reference in Simulation | DONE |
-| T002 | Must | Codex | Headless runner, test project, seeded RNG, IDs | T001 | build + same seed produces same baseline output; all 9 T002 acceptance tests below | TODO |
+| T002 | Must | Codex | Headless runner, test project, seeded RNG, IDs | T001 | build + same seed produces same baseline output; all 9 T002 acceptance tests below | BLOCKED (runtime verification) |
 | T003 | Must | Codex | World clock, grid map, resources, commands, tick scheduler | T002 | deterministic map, pause/step, invalid commands rejected; N1 + N4 below | TODO |
 | T004 | Must | Codex | Entity state, needs, health, death | T003 | food/water consumption, elapsed time, no dead actions, no negative stock | TODO |
 | T005 | Must | Codex | Utility AI and action lifecycle | T004 | hunger selects reachable food, rest and flee feasible, interrupt, no rapid oscillation | TODO |
@@ -29,9 +29,9 @@ T001 is DONE. A007 revision 2 is Accepted. See PROGRESS.md for verified toolchai
 Codex starts T001; Claude performs focused review after Codex proposes contracts. Antigravity can prepare placeholder assets and UI sketch without changing core contracts, then implement T007 after T001. Once interface is frozen, work in parallel on separate branches/worktrees. If quotas are low, do T001–T009 first and reduce optional scope.
 
 ## Requirements carried from T001 review (A007 rev 2, Accepted 2026-11-24)
-Full rationale in PROGRESS.md (Claude Code T001 Re-Review). None of these are implemented or tested yet.
+Full rationale in PROGRESS.md (Claude Code T001 Re-Review). For current T002 evidence see PROGRESS.md. Later task requirements remain assigned below.
 
-**T002 acceptance tests (all NOT RUN):**
+**T002 acceptance criteria (results in PROGRESS.md):**
 1. Record real `dotnet --list-sdks` and Godot .NET `--version` output in PROGRESS.md.
 2. `dotnet build Simulation/Simulation.csproj -c Release` succeeds separately from Game; references (incl. transitive) and DLL metadata contain no GodotSharp.
 3. `dotnet test Tests/Simulation.Tests -c Release` passes.
