@@ -271,12 +271,15 @@ public sealed partial class SimulationWorld
         return true;
     }
 
+    private bool CanCastFirebolt(EntityState caster, EntityState target, long now) =>
+        KnowsMagic(caster) && CanHarm(caster, target)
+        && ManaAt(caster, now) >= MagicCfg.FireboltCost
+        && Math.Max(Math.Abs(target.X - caster.X), Math.Abs(target.Y - caster.Y)) <= MagicCfg.FireboltRange;
+
     /// <summary>Firebolt: ranged damage to a valid foe within range. Costs mana only when cast.</summary>
     private bool CastFirebolt(EntityState caster, EntityState target, long now)
     {
-        if (!KnowsMagic(caster) || !CanHarm(caster, target)) return false;
-        if (Math.Max(Math.Abs(target.X - caster.X), Math.Abs(target.Y - caster.Y)) > MagicCfg.FireboltRange) return false;
-        if (!Spend(caster, MagicCfg.FireboltCost, now)) return false;
+        if (!CanCastFirebolt(caster, target, now) || !Spend(caster, MagicCfg.FireboltCost, now)) return false;
         AddFatigue(caster, CombatCfg.FatiguePerAttack, now);
         GainXp(caster, Skill.Combat, SkillCfg.XpPerHit, now);
         long damage = Damage(caster, target, MagicCfg.FireboltDamage, now);
@@ -383,4 +386,22 @@ public sealed partial class SimulationWorld
 
     internal long ComputeDamageForTest(long attackerId, long targetId, long basePower) =>
         Damage(entities[FindLive(attackerId)], entities[FindLive(targetId)], basePower, tick);
+
+    internal (long Mana, long ManaTick) ManaAnchorForTest(long id)
+    {
+        var e = entities[FindLive(id)];
+        return (e.Mana, e.ManaTick);
+    }
+
+    internal bool TryCastFireboltForTest(long casterId, long targetId)
+    {
+        int ci = FindLive(casterId), ti = FindLive(targetId);
+        return ci >= 0 && ti >= 0 && CastFirebolt(entities[ci], entities[ti], tick);
+    }
+
+    internal bool TryCastHealForTest(long casterId, long targetId)
+    {
+        int ci = FindLive(casterId), ti = FindLive(targetId);
+        return ci >= 0 && ti >= 0 && CastHeal(entities[ci], entities[ti], tick);
+    }
 }

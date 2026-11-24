@@ -20,6 +20,8 @@ internal static class FixR2Tests
         ("FIX-R2 #7 near-limit mana and trust saturate safely without negative wrap across save/load", ManaAndTrustNearLimitSaturateSafely),
         ("FIX-R2 #8 tamed animals stay within town radius on chase/flee/eat/wander and return home when outside", TamedAnimalStaysLeashedOnEveryPathAndReturnsHome),
         ("FIX-R2 #9 dense perception queries obey candidate budget, short-circuit, cache per tick, and keep ID tie-breaks", DensePerceptionScansObeyBudgetAndTieBreaks),
+        ("FIX-R2 #14 dragon retaliation with two aggressors/bystander/death and verified mid-action save replay", DragonRetaliationAndMidTamingReplayStrictlyVerified),
+        ("FIX-R2 #15 Firebolt and Heal charge exact costs and rejected targets cause zero debit or hit", MagicCostsExactAndInvalidTargetsZeroSideEffects),
     ];
 
     private static void Check(bool ok, string message)
@@ -1115,6 +1117,408 @@ internal static class FixR2Tests
             // At least one guard hit with ally bonus (> base GuardDamage / 4 on dragon hide) without scanning 60 * attackers.
             Check(evs.Any(e => e.Kind == EventKinds.Attacked && e.Target == dragon && e.Amount > trade.GuardDamage * Default[SpeciesCatalog.Dragon].DamageTakenPercent / 100),
                 "dense guards did not receive AlliesFighting short-circuit bonus");
+        }
+    }
+
+    // ---- Finding 14 -----------------------------------------------------------------------------
+
+    private static void DragonRetaliationAndMidTamingReplayStrictlyVerified()
+    {
+        // Part A: Two distinct aggressors, a helpless in-range bystander, aggressor death, and strict sequence-ordered retaliation.
+        {
+            // Open arena (no walled alcove that would corner bystander into FightsBack).
+            var world = FlatWorld(width: 36, height: 15, seed: 1401,
+                settlements: SettlementConfig.Default with { FarmPlots = 0, Radius = 10, FoodTarget = 0, WoodTarget = 0 });
+
+            world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 18, 7, Faction.Human, "Keep"));
+            world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 22, 7, Human, Sex.Female)); // becomes Guard -> Aggressor A
+            world.Step();
+            long cursor = world.ReadEvents(0, 1).LatestSequence;
+            Run(world, 15, ref cursor);
+
+            var initialPeople = world.ReadSnapshot().Chunks.SelectMany(c => c).Where(r => r.VisualKey == Human).Select(r => r.Id.Value).ToList();
+            long aggressorA = initialPeople.Single(id => world.ReadEntityDetails(W, new EntityId(id))!.Job == Job.Guard);
+            world.SetHealthForTest(aggressorA, 200_000); // dies cleanly on dragon counter-strike
+
+            long aggressorB = Spawn(world, 24, 7, Human, ref cursor, Sex.Female);
+            world.SetBraveryForTest(aggressorB, 1000);
+            world.SetSkillForTest(aggressorB, Skill.Scholarship, 10_000); // fights back immediately with friends/range
+            long ally1 = Spawn(world, 25, 7, Human, ref cursor, Sex.Female);
+            world.SetBraveryForTest(ally1, 1000);
+            long ally2 = Spawn(world, 25, 6, Human, ref cursor, Sex.Female);
+            world.SetBraveryForTest(ally2, 1000);
+
+            // Bystander is adjacent to dragon tile (23,7), timid, penned from fleeing outside reach, never hits dragon.
+            long bystander = Spawn(world, 23, 8, Human, ref cursor, Sex.Male);
+            world.SetTraitsForTest(bystander, -1000, -1000);
+
+            long dragon = Spawn(world, 23, 7, SpeciesCatalog.Dragon, ref cursor);
+            // Guarantee aggressor A lands an early hit before aggressor B starts; dragon responds to A, kills A, then shifts to B.
+            var events = Run(world, 200, ref cursor);
+
+            var priorAggressors = new HashSet<long>();
+            var initialStrikeTicks = new Dictionary<long, long>();
+            ActionKind dragonAction = ActionKind.Idle;
+            var dragonTargetsHit = new HashSet<long>();
+            bool aggADied = false, aggBHitDragon = false, dragonKilledTargetThenRetargeted = false;
+
+            foreach (var e in events)
+            {
+                if (e.Target == dragon && e.Kind == EventKinds.Attacked)
+                {
+                    if (priorAggressors.Add(e.Actor) && dragonAction != ActionKind.Defend)
+                        initialStrikeTicks[e.Actor] = e.Tick;
+                    if (e.Actor == aggressorB) aggBHitDragon = true;
+                }
+                else if (e.Actor == dragon && e.Kind == EventKinds.ActionStarted)
+                {
+                    dragonAction = (ActionKind)e.Reason;
+                    if (dragonAction == ActionKind.Defend)
+                        Check(priorAggressors.Contains(e.Target), $"dragon began Defend vs non-prior aggressor {e.Target} at tick {e.Tick}");
+                    else if (dragonAction == ActionKind.Hunt)
+                        Check(e.Target != bystander && e.Target != aggressorA && e.Target != aggressorB,
+                            "dragon must not Hunt humans during retaliation");
+                }
+                else if (e.Actor == dragon && e.Kind == EventKinds.Attacked)
+                {
+                    Check(dragonAction == ActionKind.Defend, $"dragon struck {e.Target} during {dragonAction}");
+                    Check(priorAggressors.Contains(e.Target), $"dragon struck {e.Target} at tick {e.Tick} without prior attack");
+                    Check(e.Target != bystander, "dragon attacked uninvolved bystander");
+                    if (initialStrikeTicks.TryGetValue(e.Target, out long tHit))
+                        Check(e.Tick > tHit, $"same-tick counterattack cascade against {e.Target} on tick {e.Tick}");
+                    dragonTargetsHit.Add(e.Target);
+                    if (aggADied && e.Target != aggressorA && priorAggressors.Contains(e.Target))
+                        dragonKilledTargetThenRetargeted = true;
+                }
+                else if (e.Kind == EventKinds.EntityDied && e.Target == aggressorA)
+                {
+                    aggADied = true;
+                }
+            }
+
+            Check(!priorAggressors.Contains(bystander), "bystander stayed peaceful");
+            Check(priorAggressors.Contains(aggressorA) && aggBHitDragon, "both aggressors struck the dragon");
+            Check(aggADied, "aggressor A died to dragon retaliation");
+            Check(dragonKilledTargetThenRetargeted && dragonTargetsHit.Count >= 2,
+                $"expected dragon retaliation to kill target and shift to second prior aggressor (targets=[{string.Join(",", dragonTargetsHit)}], aggADied={aggADied})");
+            Check(!events.Any(e => e.Actor == dragon && e.Target == bystander && (e.Kind == EventKinds.Attacked || (e.Kind == EventKinds.ActionStarted && e.Reason == (int)ActionKind.Defend))),
+                "bystander must never be targeted by dragon retaliation");
+        }
+
+        // Part B: Explicitly observe partial taming trust, magic spend, and active combat before save; verify full replay & paged history.
+        {
+            var world = FlatWorld(width: 44, height: 14, seed: 1402, settlements: SettlementConfig.Default with { FarmPlots = 0 });
+            world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 20, 6, Faction.Human, "Keep"));
+            for (int k = 0; k < 8; k++)
+                world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 18 + k % 4, 6 + k / 4, Human));
+            world.Step();
+            world.SetStorageForTest(1, food: 300, wood: 300, coins: 100);
+            long cursor = world.ReadEvents(0, 1).LatestSequence;
+            Run(world, 30, ref cursor);
+
+            var people = world.ReadSnapshot().Chunks.SelectMany(c => c).Where(r => r.VisualKey == Human).Select(r => r.Id.Value).ToList();
+            long guard = people.Single(id => world.ReadEntityDetails(W, new EntityId(id))!.Job == Job.Guard);
+            var others = people.Where(id => id != guard).ToList();
+            world.SetBraveryForTest(others[0], 1000);
+            world.SetBraveryForTest(others[1], 1000);
+            world.SetSkillForTest(others[0], Skill.Scholarship, 10_000);
+
+            long deer = Spawn(world, 15, 6, Deer, ref cursor);
+            // Reach an observed partial bond first (handling any refusal roll), then engage a dragon so both
+            // partial taming and active dragon combat + Firebolt mana expenditure are live at save time.
+            for (int t = 0; t < 200 && world.ReadAdventure(W, new EntityId(deer))!.Trust == 0; t++)
+                Run(world, 1, ref cursor);
+            var preDragonAdv = world.ReadAdventure(W, new EntityId(deer))!;
+            Check(preDragonAdv.TamedTo == 0 && preDragonAdv.Trust > 0 && preDragonAdv.Trust < Default[Deer].TameTrust,
+                $"expected partial bond trust before dragon spawn (TamedTo={preDragonAdv.TamedTo}, Trust={preDragonAdv.Trust})");
+
+            long dragon = Spawn(world, 25, 6, SpeciesCatalog.Dragon, ref cursor);
+            bool sawFight = false, sawSpell = false, checkpointReady = false;
+            for (int t = 0; t < 150; t++)
+            {
+                var step = Run(world, 1, ref cursor);
+                if (step.Any(e => e.Kind == EventKinds.Attacked && (e.Actor == dragon || e.Target == dragon))) sawFight = true;
+                if (step.Any(e => e.Kind == EventKinds.SpellCast && e.Actor == others[0])) sawSpell = true;
+
+                var dAdv = world.ReadAdventure(W, new EntityId(deer))!;
+                bool dragonAlive = world.ReadEntityDetails(W, new EntityId(dragon))?.LifeState == LifeStates.Alive;
+                bool activeFight = dragonAlive && (world.ActionOf(guard) == ActionKind.Defend
+                    || world.ActionOf(dragon) == ActionKind.Defend
+                    || others.Any(id => world.ActionOf(id) == ActionKind.Defend));
+                if (sawFight && sawSpell && activeFight
+                    && dAdv.TamedTo == 0 && dAdv.Trust > 0 && dAdv.Trust < Default[Deer].TameTrust)
+                {
+                    checkpointReady = true;
+                    break;
+                }
+            }
+            Check(checkpointReady, "pre-save checkpoint requires observed partial bond, spell cast, and live active fight");
+
+            long origCursor = cursor, loadCursor = cursor;
+            byte[] saved = SaveBytes(world);
+            var loaded = SimulationWorld.Load(new MemoryStream(saved));
+            var origEvents = new List<WorldEvent>();
+            var loadEvents = new List<WorldEvent>();
+            int liveManaChecks = 0;
+            for (int t = 0; t < 2400; t++)
+            {
+                origEvents.AddRange(Run(world, 1, ref origCursor));
+                loadEvents.AddRange(Run(loaded, 1, ref loadCursor));
+                Check(loaded.StateHash() == world.StateHash(), $"hash mismatch after reload at step {t + 1}");
+                var origAdv = world.ReadAdventure(W, new EntityId(others[0]));
+                var loadAdv = loaded.ReadAdventure(W, new EntityId(others[0]));
+                Check(loadAdv?.Mana == origAdv?.Mana, $"mana mismatch after reload at step {t + 1}");
+                if (loadAdv is not null) liveManaChecks++;
+                if (t >= 600 && loaded.ReadAdventure(W, new EntityId(deer))!.TamedTo == 1) break;
+            }
+            Check(liveManaChecks > 0, "expected live mana comparisons after reload");
+
+            var origFeeds = origEvents.Where(e => e.Kind == EventKinds.TameFed && e.Target == deer).ToList();
+            var loadFeeds = loadEvents.Where(e => e.Kind == EventKinds.TameFed && e.Target == deer).ToList();
+            Check(origFeeds.Count >= 1 && origFeeds.SequenceEqual(loadFeeds), "subsequent feed rolls diverged across save/load");
+            Check(loaded.ReadAdventure(W, new EntityId(deer))!.TamedTo == 1, "loaded deer failed to complete taming");
+
+            static List<WorldEvent> ReadAllPagedHistory(SimulationWorld w)
+            {
+                var list = new List<WorldEvent>();
+                long c = 0;
+                while (true)
+                {
+                    var p = w.ReadHistory(c, 1);
+                    Check(p.Status == PageStatus.Ok, "history paging error");
+                    list.AddRange(p.Records);
+                    if (p.NextCursor == c || !p.Records.Any()) break;
+                    c = p.NextCursor;
+                }
+                return list;
+            }
+            var h1 = ReadAllPagedHistory(world);
+            var h2 = ReadAllPagedHistory(loaded);
+            Check(h1.SequenceEqual(h2) && h2.Any(m => m.Kind == EventKinds.AnimalTamed && m.Target == deer),
+                "paged AnimalTamed history diverged after reload");
+        }
+    }
+
+    // ---- Finding 15 -----------------------------------------------------------------------------
+
+    private static void MagicCostsExactAndInvalidTargetsZeroSideEffects()
+    {
+        var magic = MagicConfig.Default with { ManaRegenTicks = 1000 }; // isolate cast debits from passive regen
+
+        // Part A1: Exact Firebolt cost (mana, fatigue, health) measured immediately around cast tick.
+        {
+            var world = FlatWorld(width: 40, height: 14, seed: 1501, magic: magic);
+            world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 20, 7, Faction.Human, "Keep"));
+            for (int k = 0; k < 3; k++)
+                world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 19 + k, 7, Human));
+            world.Step();
+            world.SetStorageForTest(1, 300, 300, 100);
+            long cursor = world.ReadEvents(0, 1).LatestSequence;
+            Run(world, 30, ref cursor);
+
+            var people = world.ReadSnapshot().Chunks.SelectMany(c => c).Where(r => r.VisualKey == Human).Select(r => r.Id.Value).ToList();
+            long guard = people.Single(id => world.ReadEntityDetails(W, new EntityId(id))!.Job == Job.Guard);
+            world.SetSkillForTest(guard, Skill.Scholarship, 10_000);
+            world.SetManaForTest(guard, magic.FireboltCost + 10);
+            var (gx, gy) = world.PositionOf(guard);
+            long wolf = Spawn(world, Math.Min(37, gx + 4), gy, Wolf, ref cursor);
+
+            int castCount = 0;
+            for (int t = 0; t < 100; t++)
+            {
+                long manaBefore = world.ReadAdventure(W, new EntityId(guard))!.Mana;
+                long fatigueBefore = world.FatigueOf(guard);
+                long wolfHpBefore = world.ReadEntityDetails(W, new EntityId(wolf))?.Health ?? 0;
+                var step = Run(world, 1, ref cursor);
+                foreach (var cast in step.Where(e => e.Kind == EventKinds.SpellCast && e.Reason == (int)Spell.Firebolt))
+                {
+                    castCount++;
+                    Check(world.ReadAdventure(W, new EntityId(guard))!.Mana == manaBefore - magic.FireboltCost,
+                        $"Firebolt mana debit exact mismatch: {manaBefore} -> {world.ReadAdventure(W, new EntityId(guard))!.Mana}");
+                    Check(world.FatigueOf(guard) == fatigueBefore + CombatConfig.Default.FatiguePerAttack,
+                        $"Firebolt fatigue delta exact mismatch: {fatigueBefore} -> {world.FatigueOf(guard)}");
+                    var hit = step.Single(e => e.Kind == EventKinds.Attacked && e.Actor == guard && e.Target == wolf && e.Tick == cast.Tick);
+                    long wolfHpAfter = world.ReadEntityDetails(W, new EntityId(wolf))?.Health ?? 0;
+                    Check(wolfHpAfter == Math.Max(0, wolfHpBefore - hit.Amount),
+                        $"Firebolt target HP delta mismatch: {wolfHpBefore} - {hit.Amount} != {wolfHpAfter}");
+                }
+            }
+            Check(castCount == 1, $"expected exactly 1 Firebolt cast with 50 mana, got {castCount}");
+        }
+
+        // Part A2: Exact Heal cost (mana, fatigue, health) measured immediately around each cast tick.
+        {
+            var world = FlatWorld(width: 40, height: 14, seed: 1502, magic: magic);
+            world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 20, 7, Faction.Human, "Keep"));
+            for (int k = 0; k < 4; k++)
+                world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 19 + k % 2, 7 + k / 2, Human));
+            world.Step();
+            world.SetStorageForTest(1, 300, 300, 100);
+            long cursor = world.ReadEvents(0, 1).LatestSequence;
+            Run(world, 30, ref cursor);
+
+            var people = world.ReadSnapshot().Chunks.SelectMany(c => c).Where(r => r.VisualKey == Human).Select(r => r.Id.Value).ToList();
+            long guard = people.Single(id => world.ReadEntityDetails(W, new EntityId(id))!.Job == Job.Guard);
+            var villagers = people.Where(id => id != guard).ToList();
+            long healer = villagers[0], hurt = villagers[1], scratched = villagers[2];
+            world.SetSkillForTest(healer, Skill.Scholarship, 10_000);
+            world.SetHealthForTest(hurt, 300_000);
+            world.SetHealthForTest(scratched, magic.HealBelowHealth);
+
+            int healCount = 0;
+            for (int t = 0; t < 120; t++)
+            {
+                long manaBefore = world.ReadAdventure(W, new EntityId(healer))!.Mana;
+                long fatigueBefore = world.FatigueOf(healer);
+                long hurtHpBefore = world.ReadEntityDetails(W, new EntityId(hurt))!.Health;
+                var step = Run(world, 1, ref cursor);
+                foreach (var cast in step.Where(e => e.Kind == EventKinds.SpellCast && e.Reason == (int)Spell.Heal))
+                {
+                    healCount++;
+                    Check(cast.Actor == healer && cast.Target == hurt, $"unexpected Heal actor={cast.Actor} target={cast.Target}");
+                    Check(world.ReadAdventure(W, new EntityId(healer))!.Mana == manaBefore - magic.HealCost,
+                        $"Heal mana debit mismatch: {manaBefore} -> {world.ReadAdventure(W, new EntityId(healer))!.Mana}");
+                    Check(world.FatigueOf(healer) == fatigueBefore + CombatConfig.Default.FatiguePerAttack,
+                        $"Heal fatigue delta mismatch: {fatigueBefore} -> {world.FatigueOf(healer)}");
+                    long hurtHpAfter = world.ReadEntityDetails(W, new EntityId(hurt))!.Health;
+                    Check(hurtHpAfter == Math.Min(VitalsConfig.MaxHealth, hurtHpBefore + magic.HealAmount),
+                        $"Heal HP mismatch: {hurtHpBefore} -> {hurtHpAfter}");
+                }
+            }
+            Check(healCount >= 1, "expected at least one Heal cast");
+        }
+
+        // Part B: Rejected casts (insufficient mana, out-of-range, dead target, same-town offensive target) -> zero debit & zero hit.
+        {
+            var rows = Enumerable.Range(0, 14).Select(y =>
+            {
+                if (y is 0 or 13) return new string('^', 42);
+                var line = ("^" + new string('.', 40) + "^").ToCharArray();
+                // Seal scholar room around (10,7) except for internal allies/targets, keeping far targets behind wall (x=13).
+                if (y is >= 5 and <= 9) line[13] = '^';
+                if (y == 5 || y == 9)
+                    for (int x = 8; x <= 13; x++) line[x] = '^';
+                if (y is >= 5 and <= 9) line[8] = '^';
+                return new string(line);
+            }).ToList();
+            var world = new SimulationWorld(new SimulationOptions
+            {
+                WorldId = W,
+                Seed = 1503,
+                MapWidth = 42,
+                MapHeight = 14,
+                Map = MapOverride.FromRows(rows),
+                Species = Default,
+                Vitals = new VitalsConfig(0, 0, 0, 0, 0, 250_000, 100_000, 4),
+                Mind = MindConfig.Default with { FatiguePerTick = 0 },
+                Settlements = SettlementConfig.Default with { FarmPlots = 0, Radius = 10, FoodTarget = 0, WoodTarget = 0 },
+                Magic = magic,
+                Grants = ImmutableSortedDictionary<long, AuthorityGrant>.Empty.Add(God, AuthorityGrant.God),
+            });
+
+            world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 10, 7, Faction.Human, "Keep"));
+            world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 32, 7, Faction.Demon, "Rival"));
+            world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 10, 7, Human, Sex.Female)); // Guard #1
+            world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 32, 7, Demon, Sex.Female));
+            world.Step();
+            world.SetStorageForTest(1, 300, 300, 100);
+            long cursor = world.ReadEvents(0, 1).LatestSequence;
+            Run(world, 15, ref cursor);
+
+            var humans = world.ReadSnapshot().Chunks.SelectMany(c => c).Where(r => r.VisualKey == Human).Select(r => r.Id.Value).ToList();
+            long townGuard = humans.Single(id => world.ReadEntityDetails(W, new EntityId(id))!.Job == Job.Guard);
+            long scholar = Spawn(world, 10, 7, Human, ref cursor, Sex.Female);
+            long townmate = Spawn(world, 10, 8, Human, ref cursor, Sex.Female);
+            world.SetSkillForTest(scholar, Skill.Scholarship, 10_000);
+            world.SetHealthForTest(townmate, 300_000);
+            long tamedWolf = Spawn(world, 11, 7, Wolf, ref cursor, Sex.Female);
+            world.SetTamedForTest(tamedWolf, 1);
+
+            long nearWolf = Spawn(world, 12, 7, Wolf, ref cursor, Sex.Female); // Chebyshev 2 (in range, same walled cell)
+            long farWolf = Spawn(world, 16, 7, Wolf, ref cursor, Sex.Female);  // Chebyshev 6 (> FireboltRange 4, behind wall)
+            long farAlly = Spawn(world, 14, 7, Human, ref cursor, Sex.Female); // Chebyshev 4 (> HealRange 3, behind wall)
+            world.SetHealthForTest(farAlly, 300_000);
+            long enemyRival = Spawn(world, 11, 8, Demon, ref cursor, Sex.Female); // Chebyshev 1 from scholar, different town
+            world.SetHealthForTest(enemyRival, 300_000);
+            long deadWolf = Spawn(world, 11, 6, Wolf, ref cursor, Sex.Female);
+            world.KillForTest(deadWolf);
+            long deadAlly = Spawn(world, 9, 7, Human, ref cursor, Sex.Female);
+            world.KillForTest(deadAlly);
+            cursor = world.ReadEvents(0, 1).LatestSequence; // discard fixture death/setup events
+
+            // 1. Insufficient mana for Firebolt & Heal
+            world.SetManaForTest(scholar, magic.FireboltCost - 1); // 39 (< 40)
+            long fat = world.FatigueOf(scholar);
+            long nearWolfHp = world.ReadEntityDetails(W, new EntityId(nearWolf))!.Health;
+            Check(!world.TryCastFireboltForTest(scholar, nearWolf), "insufficient mana Firebolt accepted");
+            Check(world.ReadAdventure(W, new EntityId(scholar))!.Mana == magic.FireboltCost - 1, "insufficient mana Firebolt debited mana");
+            Check(world.FatigueOf(scholar) == fat, "insufficient mana Firebolt added fatigue");
+            Check(world.ReadEntityDetails(W, new EntityId(nearWolf))!.Health == nearWolfHp, "insufficient mana Firebolt damaged wolf");
+
+            world.SetManaForTest(scholar, magic.HealCost - 1); // 29 (< 30)
+            fat = world.FatigueOf(scholar);
+            long mateHp = world.ReadEntityDetails(W, new EntityId(townmate))!.Health;
+            Check(!world.TryCastHealForTest(scholar, townmate), "insufficient mana Heal accepted");
+            Check(world.ReadAdventure(W, new EntityId(scholar))!.Mana == magic.HealCost - 1, "insufficient mana Heal debited mana");
+            Check(world.FatigueOf(scholar) == fat, "insufficient mana Heal added fatigue");
+            Check(world.ReadEntityDetails(W, new EntityId(townmate))!.Health == mateHp, "insufficient mana Heal healed target");
+
+            // Check cross-town Heal rejection while enemyRival is still alive and wounded at range 1.
+            long fullMana = world.ReadAdventure(W, new EntityId(scholar))!.MaxMana;
+            world.SetManaForTest(scholar, fullMana);
+            fat = world.FatigueOf(scholar);
+            long rivalHp = world.ReadEntityDetails(W, new EntityId(enemyRival))!.Health;
+            Check(!world.TryCastHealForTest(scholar, enemyRival), "cross-town Heal accepted");
+            Check(world.ReadEntityDetails(W, new EntityId(enemyRival))!.Health == rivalHp, "cross-town Heal changed rival HP");
+            Check(world.ReadAdventure(W, new EntityId(scholar))!.Mana == fullMana && world.FatigueOf(scholar) == fat,
+                "cross-town Heal changed mana or fatigue");
+
+            // Remove melee targets before isolated out-of-range/same-town AI idle check.
+            world.KillForTest(nearWolf);
+            world.KillForTest(enemyRival);
+            long rivalDeadId = enemyRival;
+            fat = world.FatigueOf(scholar);
+            long farWolfHp = world.ReadEntityDetails(W, new EntityId(farWolf))!.Health;
+            long farAllyHp = world.ReadEntityDetails(W, new EntityId(farAlly))!.Health;
+            long guardHp = world.ReadEntityDetails(W, new EntityId(townGuard))!.Health;
+            long petHp = world.ReadEntityDetails(W, new EntityId(tamedWolf))!.Health;
+            mateHp = world.ReadEntityDetails(W, new EntityId(townmate))!.Health;
+
+            // 2. Out-of-range (farWolf > FireboltRange=4, farAlly > HealRange=3)
+            Check(!world.TryCastFireboltForTest(scholar, farWolf), "out-of-range Firebolt accepted");
+            Check(!world.TryCastHealForTest(scholar, farAlly), "out-of-range Heal accepted");
+            Check(world.ReadEntityDetails(W, new EntityId(farWolf))!.Health == farWolfHp, "out-of-range Firebolt altered target HP");
+            Check(world.ReadEntityDetails(W, new EntityId(farAlly))!.Health == farAllyHp, "out-of-range Heal altered target HP");
+
+            // 3. Dead targets
+            Check(!world.TryCastFireboltForTest(scholar, deadWolf), "dead target Firebolt accepted");
+            Check(!world.TryCastFireboltForTest(scholar, rivalDeadId), "dead rival Firebolt accepted");
+            Check(!world.TryCastHealForTest(scholar, deadAlly), "dead target Heal accepted");
+
+            // 4. Same-town offensive targets (villager, guard, tamed wolf owned by same town)
+            Check(!world.TryCastFireboltForTest(scholar, townmate), "same-town villager Firebolt accepted");
+            Check(!world.TryCastFireboltForTest(scholar, townGuard), "same-town guard Firebolt accepted");
+            Check(!world.TryCastFireboltForTest(scholar, tamedWolf), "same-town tamed beast Firebolt accepted");
+            Check(world.ReadEntityDetails(W, new EntityId(townmate))!.Health == mateHp, "same-town villager HP changed");
+            Check(world.ReadEntityDetails(W, new EntityId(townGuard))!.Health == guardHp, "same-town guard HP changed");
+            Check(world.ReadEntityDetails(W, new EntityId(tamedWolf))!.Health == petHp, "same-town pet HP changed");
+
+            // Verify zero debit/fatigue/events across all 4 rejected categories above
+            Check(world.ReadAdventure(W, new EntityId(scholar))!.Mana == fullMana, "rejected direct casts altered mana");
+            Check(world.FatigueOf(scholar) == fat, "rejected direct casts altered fatigue");
+
+            // Heal townmate above threshold so scholar also emits zero Heal casts during real AI ticks against walled farWolf/farAlly & same-town targets.
+            world.SetHealthForTest(townmate, VitalsConfig.MaxHealth);
+            long aiManaBefore = world.ReadAdventure(W, new EntityId(scholar))!.Mana;
+            long aiFatBefore = world.FatigueOf(scholar);
+            cursor = world.ReadEvents(0, 1).LatestSequence;
+            var aiEvents = Run(world, 30, ref cursor);
+            Check(!aiEvents.Any(e => e.Kind is EventKinds.SpellCast or EventKinds.Attacked),
+                "walled far targets and same-town allies triggered unexpected SpellCast/Attacked");
+            Check(world.ReadAdventure(W, new EntityId(scholar))!.Mana == aiManaBefore, "AI idle loop changed mana");
+            Check(world.FatigueOf(scholar) == aiFatBefore, "AI idle loop changed fatigue");
+            Check(world.ReadEntityDetails(W, new EntityId(farWolf))!.Health == farWolfHp, "walled farWolf HP changed");
+            Check(world.ReadEntityDetails(W, new EntityId(farAlly))!.Health == farAllyHp, "walled farAlly HP changed");
         }
     }
 }
