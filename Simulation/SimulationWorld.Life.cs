@@ -47,30 +47,83 @@ public sealed partial class SimulationWorld
 
     // ---- Mating --------------------------------------------------------------------------------
 
-    /// <summary>The male to approach if this entity may conceive now, else null. All checks are bounded queries.</summary>
-    private EntityState? MateFor(EntityState e, long now)
+    private bool CanAttemptMate(EntityState e, long now)
     {
         var sd = SpeciesOf(e);
         var eco = options.Ecology;
-        if (!Breeds(sd) || e.Sex != Sex.Female || e.PregnantUntil != 0 || now < e.ReproReadyTick) return null;
-        if (FearAt(e, now) > PsyCfg.FearBlocksMatingAbove) return null; // too frightened
-        if (StageOf(e, now) != LifeStage.Adult) return null;
+        if (!Breeds(sd) || e.Sex != Sex.Female || e.PregnantUntil != 0 || now < e.ReproReadyTick) return false;
+        if (FearAt(e, now) > PsyCfg.FearBlocksMatingAbove) return false;
+        if (StageOf(e, now) != LifeStage.Adult) return false;
         var v = e.Vitals.At(now, options.Vitals);
-        if (v.Hunger > eco.ReproMaxNeed || v.Thirst > eco.ReproMaxNeed || v.Health < eco.ReproMinHealth) return null;
-        if (entities.Count >= eco.MaxEntities) return null;
-        EntityState? best = null;
-        int bestDistance = int.MaxValue, sameSpecies = 0, r = MindCfg.PerceptionRadius;
-        grid.Query(e.X, e.Y, r, id =>
+        return v.Hunger <= eco.ReproMaxNeed && v.Thirst <= eco.ReproMaxNeed && v.Health >= eco.ReproMinHealth
+               && entities.Count < eco.MaxEntities;
+    }
+
+    private struct MateVisitor : IGridVisitor
+    {
+        public SimulationWorld World;
+        public EntityState Actor;
+        public long Now;
+        public int Radius, DensityCap, SameSpecies;
+        public long BestId, BestMetric;
+        public bool AbortedDensity;
+
+        public bool Visit(long id)
         {
-            var other = entities[FindLive(id)];
-            if (other.LifeState != LifeStates.Alive || other.Species != e.Species) return;
-            if (Math.Max(Math.Abs(other.X - e.X), Math.Abs(other.Y - e.Y)) > r) return;
-            sameSpecies++;
-            if (other.Sex != Sex.Male || StageOf(other, now) == LifeStage.Juvenile) return;
-            int d = Math.Abs(other.X - e.X) + Math.Abs(other.Y - e.Y);
-            if (d < bestDistance || (d == bestDistance && other.Id.Value < best!.Id.Value)) { best = other; bestDistance = d; }
-        });
-        return sameSpecies > sd!.LocalDensityCap ? null : best; // crowded: no conception
+            World.candidateVisitsThisTick++;
+            var other = World.entities[World.FindLive(id)];
+            if (other.LifeState != LifeStates.Alive || other.Species != Actor.Species) return true;
+            if (Math.Max(Math.Abs(other.X - Actor.X), Math.Abs(other.Y - Actor.Y)) > Radius) return true;
+            if (++SameSpecies > DensityCap) { AbortedDensity = true; BestId = 0; return false; }
+            if (other.Sex != Sex.Male || World.StageOf(other, Now) == LifeStage.Juvenile) return true;
+            int d = Math.Abs(other.X - Actor.X) + Math.Abs(other.Y - Actor.Y);
+            if (d < BestMetric || (d == BestMetric && BestId > 0 && other.Id.Value < BestId)) { BestId = id; BestMetric = d; }
+            return true;
+        }
+    }
+
+    /// <summary>Metered scan for nearest breeding partner; short-circuits immediately when LocalDensityCap is exceeded.</summary>
+    private bool TryScanMate(EntityState e, long now, out EntityState? mate)
+    {
+        mate = null;
+        if (!CanAttemptMate(e, now)) return true;
+        var sd = SpeciesOf(e)!;
+        int r = MindCfg.PerceptionRadius;
+        int slice = QuerySliceBudgetNow();
+        int startBucket = e.Mind.ScanPhase == ScanPhase.Mate ? e.Mind.ScanBucketOffset : 0;
+        long lastId = e.Mind.ScanPhase == ScanPhase.Mate ? e.Mind.ScanLastId : 0;
+        long bestId = e.Mind.ScanPhase == ScanPhase.Mate ? e.Mind.ScanBestId : 0;
+        long bestMetric = e.Mind.ScanPhase == ScanPhase.Mate ? e.Mind.ScanBestMetric : long.MaxValue;
+        int sameSpecies = e.Mind.ScanPhase == ScanPhase.Mate ? e.Mind.ScanExtraCount : 0;
+        if (slice <= 0)
+        {
+            SaveScanCursor(e, ScanPhase.Mate, startBucket, lastId, bestId, bestMetric, sameSpecies, now);
+            return false;
+        }
+        int nextBucket = 0;
+        long nextId = 0;
+        var visitor = new MateVisitor
+        {
+            World = this, Actor = e, Now = now, Radius = r, DensityCap = sd.LocalDensityCap,
+            SameSpecies = sameSpecies, BestId = bestId, BestMetric = bestMetric,
+        };
+        bool done = grid.QueryRange(e.X, e.Y, r, startBucket, lastId, slice, ref nextBucket, ref nextId, ref visitor, out _);
+        if (!done)
+        {
+            SaveScanCursor(e, ScanPhase.Mate, nextBucket, nextId, visitor.BestId, visitor.BestMetric, visitor.SameSpecies, now);
+            return false;
+        }
+        ClearScanCursor(ref e.Mind);
+        if (visitor.AbortedDensity || visitor.BestId == 0) return true;
+        if (FindLive(visitor.BestId) is int mi and >= 0 && entities[mi] is { LifeState: LifeStates.Alive, Sex: Sex.Male } m
+            && m.Species == e.Species && StageOf(m, now) != LifeStage.Juvenile
+            && Math.Max(Math.Abs(m.X - e.X), Math.Abs(m.Y - e.Y)) <= r)
+        {
+            mate = m;
+            return true;
+        }
+        SaveScanCursor(e, ScanPhase.Mate, 0, 0, 0, long.MaxValue, 0, now);
+        return false;
     }
 
     private void MateStep(EntityState e, long now)

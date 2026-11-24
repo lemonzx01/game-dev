@@ -19,6 +19,7 @@ internal static class FixR2Tests
         ("FIX-R2 #6 damage multipliers use wide arithmetic without wrapping and stay monotonic", DamageMultipliersNoOverflowAndMonotonic),
         ("FIX-R2 #7 near-limit mana and trust saturate safely without negative wrap across save/load", ManaAndTrustNearLimitSaturateSafely),
         ("FIX-R2 #8 tamed animals stay within town radius on chase/flee/eat/wander and return home when outside", TamedAnimalStaysLeashedOnEveryPathAndReturnsHome),
+        ("FIX-R2 #9 dense perception queries obey candidate budget, short-circuit, cache per tick, and keep ID tie-breaks", DensePerceptionScansObeyBudgetAndTieBreaks),
     ];
 
     private static void Check(bool ok, string message)
@@ -905,6 +906,215 @@ internal static class FixR2Tests
             }
             Check(prevWolfDist <= radius, $"outside tamed wolf did not make it home inside radius {radius} (ended at dist {prevWolfDist})");
             Check(prevDiagCheb <= radius, $"diagonal outside tamed deer did not make it home inside radius {radius} (ended at dist {prevDiagCheb})");
+        }
+    }
+
+    // ---- Finding 9 ------------------------------------------------------------------------------
+
+    private static void DensePerceptionScansObeyBudgetAndTieBreaks()
+    {
+        // 1. Single-decision pass-through: picking Tame must inspect the neighbourhood once, not 3x.
+        {
+            var world = FlatWorld(
+                width: 30, height: 14, seed: 901,
+                settlements: SettlementConfig.Default with { FarmPlots = 0, FoodTarget = 0, WoodTarget = 0 });
+            world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 12, 7, Faction.Human, "Keep"));
+            world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 12, 7, Human, Sex.Female)); // Guard
+            world.Step();
+            world.SetStorageForTest(1, food: 300, wood: 100, coins: 50);
+            long cursor = world.ReadEvents(0, 1).LatestSequence;
+            Run(world, 12, ref cursor);
+
+            long feeder = Spawn(world, 12, 7, Human, ref cursor, Sex.Female);
+            for (int i = 0; i < 15; i++)
+                world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 14, 7, Deer, Sex.Female));
+
+            long tameTickVisits = -1;
+            for (int t = 0; t < 30; t++)
+            {
+                var evs = Run(world, 1, ref cursor);
+                if (evs.Any(e => e.Kind == EventKinds.ActionStarted && e.Actor == feeder && e.Reason == (int)ActionKind.Tame))
+                {
+                    tameTickVisits = world.LastTameCandidateVisits;
+                    break;
+                }
+            }
+            // Total living entities in perception is 17; one scan must inspect <= 17 (not 3 * 17 = 51).
+            Check(tameTickVisits > 0 && tameTickVisits <= 20,
+                $"expected <= 1 TameCandidate scan (<= 20 visits) on decision tick, got {tameTickVisits}");
+        }
+
+        // 2. Dense Guards: budget enforced per tick + exact nearest and lowest-ID tie-break across slice boundary,
+        //    plus Save/Load mid-scan state identity.
+        {
+            var mind = MindConfig.Default with { FatiguePerTick = 0, CandidateVisitBudgetPerTick = 96, QuerySliceBudget = 32 };
+            var trade = TradeConfig.Default with { MembersPerGuard = 1 };
+            var world = new SimulationWorld(new SimulationOptions
+            {
+                WorldId = W,
+                Seed = 902,
+                MapWidth = 32,
+                MapHeight = 16,
+                Map = MapOverride.FromRows(Enumerable.Range(0, 16).Select(y => y is 0 or 15 ? new string('^', 32) : "^" + new string('.', 30) + "^").ToList()),
+                Species = Default,
+                Vitals = new VitalsConfig(0, 0, 0, 0, 0, 250_000, 100_000, 4),
+                Mind = mind,
+                Trade = trade,
+                Settlements = SettlementConfig.Default with { FarmPlots = 0, Radius = 10, FoodTarget = 0, WoodTarget = 0 },
+                Grants = ImmutableSortedDictionary<long, AuthorityGrant>.Empty.Add(God, AuthorityGrant.God),
+            });
+            world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 12, 7, Faction.Human, "Keep"));
+            // Co-locate 20 guards + 70 bystanders + late threats all inside bucket (1,0) [x in 8..15, y in 0..7]
+            for (int i = 0; i < 20; i++)
+                world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 10, 5, Human, Sex.Female));
+            for (int i = 0; i < 65; i++)
+                world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 11, 5, Sheep, Sex.Female));
+            world.Step();
+            world.SetStorageForTest(1, food: 300, wood: 100, coins: 50);
+            long cursor = world.ReadEvents(0, 1).LatestSequence;
+
+            // Spawn distant threat early in ID order, and tied closer threats LATE (beyond QuerySliceBudget = 32).
+            world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 15, 5, Wolf)); // dist 5
+            world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 12, 5, Wolf)); // dist 2, lower ID
+            world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 12, 5, Wolf)); // dist 2, higher ID
+            var wolfSpawns = Run(world, 1, ref cursor).Where(e => e.Kind == EventKinds.CommandApplied).Select(e => e.Target).ToList();
+            long wolfFar = wolfSpawns[0], wolfBest = wolfSpawns[1], wolfTie = wolfSpawns[2];
+            _ = wolfFar;
+
+            byte[]? midScanSave = null;
+            SimulationWorld? loadedShadow = null;
+            long selectedTarget = 0;
+            for (int t = 0; t < 100; t++)
+            {
+                var evs = Run(world, 1, ref cursor);
+                loadedShadow?.Step();
+                if (loadedShadow is not null)
+                    Check(loadedShadow.StateHash() == world.StateHash(), $"mid-scan guard replay diverged at step {t}");
+
+                Check(world.LastCandidateVisits <= mind.CandidateVisitBudgetPerTick,
+                    $"dense guards exceeded visit budget at tick {world.LastCompletedTick}: {world.LastCandidateVisits} > {mind.CandidateVisitBudgetPerTick}");
+                if (midScanSave is null && world.LastCandidateVisits > 0)
+                {
+                    midScanSave = SaveBytes(world);
+                    loadedShadow = SimulationWorld.Load(new MemoryStream(midScanSave));
+                    Check(loadedShadow.StateHash() == world.StateHash(), "mid-scan initial save/load hash mismatch");
+                }
+                var alert = evs.FirstOrDefault(e => e.Kind == EventKinds.GuardAlert);
+                if (alert.Kind == EventKinds.GuardAlert && selectedTarget == 0)
+                    selectedTarget = alert.Target;
+            }
+            Check(loadedShadow is not null, "dense guard save checkpoint was never captured");
+            Check(selectedTarget == wolfBest && selectedTarget != wolfTie,
+                $"dense guard tie-break / nearest failed across slices: picked {selectedTarget}, expected {wolfBest} (tie {wolfTie}, far {wolfFar})");
+        }
+
+        // 3. Dense Healers: budget enforced + most wounded & lowest ID wins even past slice boundary.
+        {
+            var mind = MindConfig.Default with { FatiguePerTick = 0, CandidateVisitBudgetPerTick = 96, QuerySliceBudget = 32 };
+            var world = FlatWorld(width: 32, height: 16, seed: 903, mind: mind,
+                settlements: SettlementConfig.Default with { FarmPlots = 0, Radius = 10, FoodTarget = 0, WoodTarget = 0 });
+            world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 10, 5, Faction.Human, "Keep"));
+            for (int i = 0; i < 80; i++)
+                world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 10, 5, Human, Sex.Female));
+            world.Step();
+            world.SetStorageForTest(1, food: 300, wood: 100, coins: 50);
+            long cursor = world.ReadEvents(0, 1).LatestSequence;
+
+            var people = world.ReadSnapshot().Chunks.SelectMany(c => c).Select(r => r.Id.Value).ToList();
+            for (int i = 0; i < 15; i++) world.SetSkillForTest(people[i], Skill.Scholarship, 10_000);
+            long hurtMild = people[5];
+            long hurtBest = people[75];
+            long hurtTie = people[78];
+            world.SetHealthForTest(hurtMild, 500_000);
+            world.SetHealthForTest(hurtBest, 200_000);
+            world.SetHealthForTest(hurtTie, 200_000);
+
+            long healedTarget = 0;
+            for (int t = 0; t < 80; t++)
+            {
+                var evs = Run(world, 1, ref cursor);
+                Check(world.LastCandidateVisits <= mind.CandidateVisitBudgetPerTick,
+                    $"dense healers exceeded visit budget at tick {world.LastCompletedTick}: {world.LastCandidateVisits} > {mind.CandidateVisitBudgetPerTick}");
+                var spell = evs.FirstOrDefault(e => e.Kind == EventKinds.SpellCast && e.Reason == (int)Spell.Heal);
+                if (spell.Kind == EventKinds.SpellCast && healedTarget == 0)
+                    healedTarget = spell.Target;
+            }
+            Check(healedTarget == hurtBest && healedTarget != hurtTie && healedTarget != hurtMild,
+                $"dense healer picked wrong target {healedTarget}; expected lowest-HP/lowest-ID {hurtBest} (mild={hurtMild}, tie={hurtTie})");
+        }
+
+        // 4. Dense Feeders + AlliesFighting short-circuit: budget enforced + closest/lowest-ID deer wins late in bucket.
+        {
+            var mind = MindConfig.Default with { FatiguePerTick = 0, CandidateVisitBudgetPerTick = 96, QuerySliceBudget = 32 };
+            var taming = TamingConfig.Default with { BaseAcceptPercent = 100, TrustPerFeed = 20, CooldownTicks = 60 };
+            var world = FlatWorld(width: 32, height: 16, seed: 904, mind: mind, taming: taming,
+                settlements: SettlementConfig.Default with { FarmPlots = 0, Radius = 10, FoodTarget = 0, WoodTarget = 0 });
+            world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 10, 5, Faction.Human, "Keep"));
+            world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 10, 5, Human, Sex.Female)); // Guard
+            world.Step();
+            world.SetStorageForTest(1, food: 300, wood: 100, coins: 50);
+            long cursor = world.ReadEvents(0, 1).LatestSequence;
+            Run(world, 15, ref cursor);
+
+            for (int i = 0; i < 12; i++) world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 10, 5, Human, Sex.Female));
+            var feeders = Run(world, 1, ref cursor).Where(e => e.Kind == EventKinds.CommandApplied).Select(e => e.Target).ToList();
+            // 65 farther deer early in bucket (1,0), then two tied closest deer LATE (> QuerySliceBudget = 32)
+            for (int i = 0; i < 65; i++) world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 15, 5, Deer, Sex.Female));
+            world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 11, 5, Deer, Sex.Female));
+            world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 11, 5, Deer, Sex.Female));
+            var lateDeer = Run(world, 1, ref cursor).Where(e => e.Kind == EventKinds.CommandApplied).Select(e => e.Target).ToList();
+            long deerBest = lateDeer[^2];
+            long deerTie = lateDeer[^1];
+
+            long tamedStartTarget = 0;
+            for (int t = 0; t < 120; t++)
+            {
+                var evs = Run(world, 1, ref cursor);
+                Check(world.LastCandidateVisits <= mind.CandidateVisitBudgetPerTick,
+                    $"dense feeders exceeded visit budget at tick {world.LastCompletedTick}: {world.LastCandidateVisits} > {mind.CandidateVisitBudgetPerTick}");
+                var startTame = evs.FirstOrDefault(e => e.Kind == EventKinds.ActionStarted && e.Reason == (int)ActionKind.Tame && feeders.Contains(e.Actor));
+                if (startTame.Kind == EventKinds.ActionStarted && tamedStartTarget == 0)
+                    tamedStartTarget = startTame.Target;
+            }
+            Check(tamedStartTarget == deerBest && tamedStartTarget != deerTie,
+                $"dense feeder picked wrong target {tamedStartTarget}; expected closest/lowest-ID {deerBest} (tie={deerTie})");
+        }
+
+        // 5. Dense Combat short-circuit: AlliesFighting stops at MaxAllies and required hits obey budget.
+        {
+            var mind = MindConfig.Default with { FatiguePerTick = 0, CandidateVisitBudgetPerTick = 64, QuerySliceBudget = 32 };
+            var trade = TradeConfig.Default with { MembersPerGuard = 1 };
+            var world = new SimulationWorld(new SimulationOptions
+            {
+                WorldId = W,
+                Seed = 905,
+                MapWidth = 30,
+                MapHeight = 14,
+                Map = MapOverride.FromRows(Enumerable.Range(0, 14).Select(y => y is 0 or 13 ? new string('^', 30) : "^" + new string('.', 28) + "^").ToList()),
+                Species = Default,
+                Vitals = new VitalsConfig(0, 0, 0, 0, 0, 250_000, 100_000, 4),
+                Mind = mind,
+                Trade = trade,
+                Settlements = SettlementConfig.Default with { FarmPlots = 0, Radius = 10, FoodTarget = 0, WoodTarget = 0 },
+                Grants = ImmutableSortedDictionary<long, AuthorityGrant>.Empty.Add(God, AuthorityGrant.God),
+            });
+            world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 12, 7, Faction.Human, "Keep"));
+            for (int i = 0; i < 60; i++)
+                world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 12, 7, Human, Sex.Female));
+            world.Step();
+            long cursor = world.ReadEvents(0, 1).LatestSequence;
+            // Let guards recognize adjacent Dragon and attack together in dense tile.
+            long dragon = Spawn(world, 13, 7, SpeciesCatalog.Dragon, ref cursor);
+            var evs = new List<WorldEvent>();
+            for (int t = 0; t < 80; t++)
+            {
+                evs.AddRange(Run(world, 1, ref cursor));
+                Check(world.LastCandidateVisits <= mind.CandidateVisitBudgetPerTick,
+                    $"dense combat exceeded visit budget at tick {world.LastCompletedTick}: {world.LastCandidateVisits} > {mind.CandidateVisitBudgetPerTick}");
+            }
+            // At least one guard hit with ally bonus (> base GuardDamage / 4 on dragon hide) without scanning 60 * attackers.
+            Check(evs.Any(e => e.Kind == EventKinds.Attacked && e.Target == dragon && e.Amount > trade.GuardDamage * Default[SpeciesCatalog.Dragon].DamageTakenPercent / 100),
+                "dense guards did not receive AlliesFighting short-circuit bonus");
         }
     }
 }

@@ -220,23 +220,18 @@ public sealed partial class SimulationWorld
         if (s.Guards >= GuardsWanted(s)) return;
         e.Job = Job.Guard;
         s.Guards++;
+        perceptionVersion++;
     }
 
-    /// <summary>Nearest living creature the guard's people fear inside the town radius (Manhattan from the guard, then id).</summary>
-    private EntityState? TownThreat(EntityState guard)
+    /// <summary>Metered scan for nearest living feared intruder inside town radius (Manhattan from guard, then id).</summary>
+    private bool TryScanTownThreat(EntityState guard, long now, out EntityState? threat)
     {
-        if (guard.Job != Job.Guard || SettlementOf(guard) is not { } s) return null;
-        EntityState? best = null;
-        int bestDistance = int.MaxValue, r = TownCfg.Radius;
-        grid.Query(s.X, s.Y, r, id =>
-        {
-            var other = entities[FindLive(id)];
-            if (other.LifeState != LifeStates.Alive || !ThreatTo(guard, other)) return;
-            if (Math.Max(Math.Abs(other.X - s.X), Math.Abs(other.Y - s.Y)) > r) return;
-            int d = Math.Abs(other.X - guard.X) + Math.Abs(other.Y - guard.Y);
-            if (d < bestDistance || (d == bestDistance && other.Id.Value < best!.Id.Value)) { best = other; bestDistance = d; }
-        });
-        return best;
+        threat = null;
+        if (guard.Job != Job.Guard || SettlementOf(guard) is not { } s) return true;
+        return RunCachedBestScan(
+            guard, ScanPhase.TownThreat, s, ScanCacheKind.TownThreat, s.Id, guard.Species,
+            guard.X, guard.Y, s.X, s.Y, TownCfg.Radius, long.MaxValue, now, shareInCache: true,
+            out threat, out _, out _);
     }
 
 
@@ -248,6 +243,7 @@ public sealed partial class SimulationWorld
         if (e.Job == Job.Guard) s.Guards--;
         if (e.OnTrip) { e.OnTrip = false; s.TradersOut--; s.CachedDealRevision = -1; }
         e.TradePartner = 0;
+        perceptionVersion++;
     }
 
     // ---- Test hooks ----------------------------------------------------------------------------

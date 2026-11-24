@@ -16,7 +16,8 @@ public sealed record MindConfig(
     long FatiguePerTick, long RestRecoveryPerTick, long RestStartFatigue, long RestEndFatigue,
     long EatStartNeed, long DrinkStartNeed, int FleeSteps,
     ImmutableSortedDictionary<int, ImmutableArray<int>> FearOf,
-    int PathNodeBudgetPerTick = 4000, int UnreachableCooldownTicks = 100, int MaxReplans = 2)
+    int PathNodeBudgetPerTick = 4000, int UnreachableCooldownTicks = 100, int MaxReplans = 2,
+    int CandidateVisitBudgetPerTick = 16384, int QuerySliceBudget = 256)
 {
     public const long MaxFatigue = 1_000_000;
 
@@ -41,6 +42,8 @@ public sealed record MindConfig(
         if (PathNodeBudgetPerTick < SearchNodeBudget) throw new ArgumentException("PathNodeBudgetPerTick must cover at least one full search.");
         ArgumentOutOfRangeException.ThrowIfLessThan(UnreachableCooldownTicks, 1);
         ArgumentOutOfRangeException.ThrowIfNegative(MaxReplans);
+        ArgumentOutOfRangeException.ThrowIfLessThan(CandidateVisitBudgetPerTick, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(QuerySliceBudget, 1);
         if (RestEndFatigue >= RestStartFatigue) throw new ArgumentException("RestEndFatigue must be below RestStartFatigue (hysteresis).");
     }
 
@@ -54,6 +57,8 @@ public sealed record MindConfig(
         w.Write(PathNodeBudgetPerTick);
         w.Write(UnreachableCooldownTicks);
         w.Write(MaxReplans);
+        w.Write(CandidateVisitBudgetPerTick);
+        w.Write(QuerySliceBudget);
         w.Write((uint)FearOf.Count);
         foreach (var (species, feared) in FearOf)
         {

@@ -52,25 +52,17 @@ public sealed partial class SimulationWorld
         IsEligibleFeeder(feeder, now, out _) && animal.LifeState == LifeStates.Alive && animal.TamedTo == 0
         && animal.SettlementId == 0 && SpeciesOf(animal) is { TameTrust: > 0 } && !HasActiveAttemptClaim(animal, feeder, now);
 
-    private bool WantsToTame(EntityState e, VitalsView v, long now) =>
-        IsEligibleFeeder(e, now, out _) && v.Hunger < MindCfg.EatStartNeed && v.Thirst < MindCfg.DrinkStartNeed
-        && TameCandidate(e, now) is not null;
-
-    /// <summary>Nearest untamed animal of a tameable species within perception without an active competing claim (Manhattan, then id).</summary>
-    private EntityState? TameCandidate(EntityState e, long now)
+    /// <summary>Metered scan for nearest untamed animal of a tameable species within perception without an active claim.</summary>
+    private bool TryScanTameCandidate(EntityState e, long now, out EntityState? candidate)
     {
-        EntityState? best = null;
-        int bestDistance = int.MaxValue, r = MindCfg.PerceptionRadius;
-        grid.Query(e.X, e.Y, r, id =>
-        {
-            var o = entities[FindLive(id)];
-            if (o.LifeState != LifeStates.Alive || o.TamedTo != 0 || SpeciesOf(o) is not { TameTrust: > 0 } || o.SettlementId != 0) return;
-            if (HasActiveAttemptClaim(o, e, now)) return;
-            if (Math.Max(Math.Abs(o.X - e.X), Math.Abs(o.Y - e.Y)) > r) return;
-            int d = Math.Abs(o.X - e.X) + Math.Abs(o.Y - e.Y);
-            if (d < bestDistance || (d == bestDistance && o.Id.Value < best!.Id.Value)) { best = o; bestDistance = d; }
-        });
-        return best;
+        candidate = null;
+        bool done = RunCachedBestScan(
+            e, ScanPhase.Tame, null, ScanCacheKind.TameUnclaimed, 0, 0,
+            e.X, e.Y, e.X, e.Y, MindCfg.PerceptionRadius, long.MaxValue, now, shareInCache: true,
+            out candidate, out _, out bool sawActiveClaim);
+        if (done && (sawActiveClaim || candidate?.TamerId != 0))
+            scanResultCache.Remove((ScanCacheKind.TameUnclaimed, 0, 0, e.X, e.Y));
+        return done;
     }
 
     private void TameStep(EntityState e, long now)
@@ -103,6 +95,7 @@ public sealed partial class SimulationWorld
         var sd = SpeciesOf(animal)!;
         if (animal.TamerId != feeder.Id.Value) { animal.TamerId = feeder.Id.Value; animal.Trust = 0; } // trust is personal
         animal.TameAttemptUntil = now + (long)TameCfg.CooldownTicks + TameCfg.GiveUpTicks;
+        perceptionVersion++;
         int chance = Math.Clamp(TameCfg.BaseAcceptPercent - FearAt(animal, now) / 20 + feeder.Psyche.Sociability / 50, 5, 95);
         bool accepted = (int)(streams[PsycheStream].Draw() % 100) < chance;
         if (accepted)
@@ -137,6 +130,7 @@ public sealed partial class SimulationWorld
         var e = entities[FindLive(id)];
         e.TamerId = tamer;
         e.Trust = trust;
+        perceptionVersion++;
     }
 
     internal ulong PsycheRngStateForTest => streams[PsycheStream].State;

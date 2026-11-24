@@ -106,6 +106,7 @@ public sealed partial class SimulationWorld
         StartIdle(e, now);  // actions invalidated immediately (pending step superseded)
         DropCarry(e, now);
         LeaveSettlement(e);
+        perceptionVersion++;
         e.Mind.ThinkToken++; // pending think superseded
         grid.Remove(e.Id.Value, e.X, e.Y);
         e.DeathTick = now;

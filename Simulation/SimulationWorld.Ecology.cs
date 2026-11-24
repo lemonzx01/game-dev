@@ -101,23 +101,15 @@ public sealed partial class SimulationWorld
         return true;
     }
 
-    /// <summary>Nearest living huntable prey within perception (Manhattan, then lower ID).</summary>
-    private EntityState? NearestPrey(EntityState e)
+    /// <summary>Metered scan for nearest living huntable prey within perception (Manhattan, then lower ID).</summary>
+    private bool TryScanNearestPrey(EntityState e, long now, out EntityState? prey)
     {
+        prey = null;
         var hunts = SpeciesOf(e)?.Hunts ?? [];
-        if (hunts.IsEmpty) return null;
-        EntityState? best = null;
-        int bestDistance = int.MaxValue, r = MindCfg.PerceptionRadius;
-        grid.Query(e.X, e.Y, r, id =>
-        {
-            if (id == e.Id.Value) return;
-            var other = entities[FindLive(id)];
-            if (!CanHunt(e, other)) return;
-            if (Math.Max(Math.Abs(other.X - e.X), Math.Abs(other.Y - e.Y)) > r) return;
-            int d = Math.Abs(other.X - e.X) + Math.Abs(other.Y - e.Y);
-            if (d < bestDistance || (d == bestDistance && other.Id.Value < best!.Id.Value)) { best = other; bestDistance = d; }
-        });
-        return best;
+        if (hunts.IsEmpty) return true;
+        return RunMeteredBestScan(
+            e, ScanPhase.Hunt, null, e.X, e.Y, MindCfg.PerceptionRadius, long.MaxValue, now,
+            out prey, out _, out _);
     }
 
     private void HuntStep(EntityState e, long now)

@@ -145,7 +145,9 @@ public sealed partial class SimulationWorld
         }
         w.Write(p.Relationships.Count);
         foreach (var rel in p.Relationships) { w.Write(rel.Other); w.Write(rel.Affinity); w.Write(rel.Familiarity); w.Write(rel.LastTick); }
-        w.Write(m.NoWorkUntil); w.Write(e.SettlementId); w.Write((int)e.Job); w.Write((int)e.WorkGoal); w.Write((byte)e.CarryKind); w.Write(e.CarryAmount);
+        w.Write(m.NoWorkUntil);
+        WriteMindScan(w, m);
+        w.Write(e.SettlementId); w.Write((int)e.Job); w.Write((int)e.WorkGoal); w.Write((byte)e.CarryKind); w.Write(e.CarryAmount);
         w.Write(e.TradePartner); w.Write(e.OnTrip);
         WriteSkills(w, e);
         WriteAdventure(w, e);
@@ -516,6 +518,7 @@ public sealed partial class SimulationWorld
         for (int i = 0; i < relationCount; i++)
             p.Relationships.Add(new Relationship(r.ReadInt64(), r.ReadInt32(), r.ReadInt32(), r.ReadInt64()));
         e.Mind.NoWorkUntil = r.ReadInt64();
+        ReadMindScanFrom(r, ref e.Mind, ids.Next);
         e.SettlementId = r.ReadInt32(); e.Job = (Job)r.ReadInt32(); e.WorkGoal = (WorkGoal)r.ReadInt32();
         Require(Enum.IsDefined(e.Job) && Enum.IsDefined(e.WorkGoal), "Job or WorkGoal invalid.");
         e.CarryKind = (ResourceKind)r.ReadByte(); e.CarryAmount = r.ReadInt32();
@@ -606,6 +609,7 @@ public sealed partial class SimulationWorld
         if (tamedTo.HasValue) e.TamedTo = tamedTo.Value;
         if (tamerId.HasValue) e.TamerId = tamerId.Value;
         if (trust.HasValue) e.Trust = trust.Value;
+        perceptionVersion++;
     }
 }
 

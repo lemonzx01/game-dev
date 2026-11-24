@@ -101,12 +101,16 @@ public sealed partial class SimulationWorld : ISimulation
         {
             emittedThisTick = 0;
             droppedThisTick = 0;
+            candidateVisitsThisTick = 0;
+            guardVisitsThisTick = 0;
+            healVisitsThisTick = 0;
+            tameVisitsThisTick = 0;
             // Entities that died on the previous tick were visible as Dead in that tick's snapshot; drop them now.
             entities.RemoveAll(e => e.LifeState == LifeStates.Dead);
             PruneBlockedBuyers(next);
             while (commands.Count > 0 && commands.Peek().TargetTick == next)
                 Execute(commands.Dequeue(), next);
-            LastDiscretionaryRun = scheduler.Run(next, item => RunWork(item, next));
+            LastDiscretionaryRun = scheduler.Run(next, item => RunWork(item, next), () => candidateVisitsThisTick < MindCfg.CandidateVisitBudgetPerTick);
             ProcessPaths(next);
             phase?.Invoke();
             if (eventKind.HasValue)
@@ -114,6 +118,10 @@ public sealed partial class SimulationWorld : ISimulation
             if (droppedThisTick > 0)
                 events.Append(new WorldEvent(0, next, EventKinds.EventsDropped, Amount: droppedThisTick));
             tick = next;
+            LastCandidateVisits = candidateVisitsThisTick;
+            LastGuardCandidateVisits = guardVisitsThisTick;
+            LastHealCandidateVisits = healVisitsThisTick;
+            LastTameCandidateVisits = tameVisitsThisTick;
             snapshot = null;
             settlementViews = null;
         }

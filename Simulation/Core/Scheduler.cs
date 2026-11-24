@@ -53,7 +53,7 @@ internal sealed class Scheduler
     /// work. <paramref name="execute"/> returns false for a stale (superseded) item: it is dequeued but does not consume
     /// budget, so stale entries cannot starve live decisions (T014). Returns discretionary items that did work.
     /// </summary>
-    public int Run(long tick, Func<WorkItem, bool> execute)
+    public int Run(long tick, Func<WorkItem, bool> execute, Func<bool>? canRunDiscretionary = null)
     {
         runningTick = tick;
         try
@@ -64,7 +64,8 @@ internal sealed class Scheduler
                 execute(item);
             }
             int done = 0;
-            while (done < DiscretionaryBudget && discretionary.TryPeek(out var item, out var key) && key.DueTick <= tick)
+            while (done < DiscretionaryBudget && (canRunDiscretionary is null || canRunDiscretionary())
+                   && discretionary.TryPeek(out var item, out var key) && key.DueTick <= tick)
             {
                 discretionary.Dequeue();
                 if (execute(item)) done++;
