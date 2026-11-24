@@ -6,6 +6,10 @@ T001–T014 DONE and merged to main (2026-11-24; T003–T014 merged by owner ins
 
 ## Handoff log
 
+**2026-11-25 | Claude Code | Integrated T018-env (Codex) | main | merged after review**
+
+- Codex's environment art (independent local checkout, could not reach the shared repo) fetched, reviewed (renderer diff limited to environment parts, generator script read) and merged on top of T019. Merged main: 89/89 tests, T007/T008/GodTools/Settlement acceptances pass, in-game frame checked.
+
 **2026-11-24 | Claude Code | T019 combat, magic, dragon, taming (simulation) | main | merged (self-reviewed, A009)**
 
 - Validated attacks with fatigue cost; damage from skill, health, allies and toughness; villagers fight back when cornered or brave with friends. Firebolt/Heal for scholars with mana. Dragon species (armoured, retaliates, feared). Taming by feeding town food: refusal, personal trust, durable AnimalTamed milestone; tamed beasts stay home, are not threats, spare livestock. Schema 13. 89/89 tests, all Godot acceptances pass, 1,000-entity p99 2.6 ms. No Game/** changes (parallel T018-env). Handoff docs/handoffs/T019.md.

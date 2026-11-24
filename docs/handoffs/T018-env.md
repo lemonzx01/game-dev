@@ -1,6 +1,6 @@
 # T018-env — Environment pixel art
 
-State: REVIEW (implementation and self-review complete, integration blocked)
+State: DONE — reviewed and merged into main by Claude Code (2026-11-25) on top of T019; 89/89 tests and all four Godot acceptances pass on the merged main
 Agent: Codex | Branch: feat/T018-environment-art | Base: 69e3a51 | Claim: 58d191a
 Checkout: F:/Code/game-dev/worktrees/T018-env-codex (independent local repository).
 
