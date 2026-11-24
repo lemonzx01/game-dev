@@ -284,4 +284,5 @@ public sealed partial class SimulationWorld
     internal long NextTickUnsafe => tick + 1;
     internal int LiveEntityCount => entities.Count;
     internal int RequiredWorkCount => scheduler.RequiredCount;
+    internal void KillForTest(long id) => Die(entities[FindLive(id)], tick, DeathCause.OldAge, 0);
 }

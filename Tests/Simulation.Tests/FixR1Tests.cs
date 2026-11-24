@@ -12,6 +12,8 @@ internal static class FixR1Tests
     [
         ("FIX-R1 #1 unreachable buyer returns cargo, releases trader slot, bounds retries, resumes when opened", UnreachableBuyerResumesWhenOpened),
         ("FIX-R1 #2 long routes obey combined node budget, count expansions, serve locals, replay identically", LongRouteBudgetAndReplay),
+        ("FIX-R1 #3 flooding empty farm plot or centre is rejected and work continues", FloodedPlotAndCentreRejected),
+        ("FIX-R1 #4 guard promotion defers until carried load is deposited", PromotionDoesNotStrandCarriedLoad),
     ];
 
     private static void Check(bool ok, string message)
@@ -200,5 +202,105 @@ internal static class FixR1Tests
         Check(maxTickExpansions > 0 && totalExpansions > 0, $"long route expansions must be recorded in LastPathExpansions (total={totalExpansions})");
         Check(checkpoint is not null, "expected checkpoint capture while local requests waited behind long route");
         Check(events.Any(e => e.Kind == EventKinds.EntityAte), "local food searches were eventually served");
+    }
+
+    // ---- Finding 3 ------------------------------------------------------------------------------
+
+    private static void FloodedPlotAndCentreRejected()
+    {
+        var rows = Enumerable.Range(0, 24).Select(y => y is 0 or 23 ? new string('^', 24) : "^" + new string('.', 22) + "^").ToList();
+        var map = MapOverride.FromRows(rows);
+        var world = new SimulationWorld(new SimulationOptions
+        {
+            WorldId = W,
+            Seed = 303,
+            MapWidth = 24,
+            MapHeight = 24,
+            Map = map,
+            Species = Default,
+            Vitals = new VitalsConfig(0, 0, 0, 0, 0, 250_000, 100_000, 4),
+            Mind = MindConfig.Default with { FatiguePerTick = 0 },
+            Settlements = SettlementConfig.Default with { FarmPlots = 1, WoodTarget = 0, FoodTarget = 60, CropGrowTicks = 20 },
+            Grants = ImmutableSortedDictionary<long, AuthorityGrant>.Empty.Add(God, AuthorityGrant.God),
+        });
+
+        world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 10, 10, Faction.Human, "Meadow"));
+        world.Step();
+        var plots = world.ReadFarmPlots(1);
+        Check(plots.Count == 1 && plots[0].Crop > 0, "town founded with one empty planted plot");
+        var (px, py, _) = plots[0];
+        long cursor = world.ReadEvents(0, 1).LatestSequence;
+
+        // Both plot and centre have zero occupants; flooding either must be rejected.
+        world.SubmitCommand(new SetTerrainCommand(W, God, CommandModes.God, px, py, Terrain.Water));
+        world.SubmitCommand(new SetTerrainCommand(W, God, CommandModes.God, 10, 10, Terrain.Water));
+        var cmdEvents = Run(world, 1, ref cursor).Where(e => e.Kind is EventKinds.CommandApplied or EventKinds.CommandRejected).ToList();
+        Check(cmdEvents.Count == 2 && cmdEvents.All(e => e.Kind == EventKinds.CommandRejected),
+            $"expected both floods rejected, got: {string.Join(", ", cmdEvents.Select(e => $"{e.Kind}:{(CommandReason)e.Reason}"))}");
+        Check(world.ReadMap().At(px, py) == Terrain.Grass && world.ReadMap().At(10, 10) == Terrain.Grass, "terrain unchanged");
+
+        // Spawn workers and verify harvesting and delivery continue normally.
+        world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 12, 10, Human));
+        world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 13, 10, Human));
+        var workEvents = Run(world, 120, ref cursor);
+        Check(workEvents.Any(e => e.Kind == EventKinds.Harvested && e.Target == 1), "harvesting continued");
+        Check(workEvents.Any(e => e.Kind == EventKinds.Deposited && e.Target == 1), "delivery continued");
+        Check(world.ReadSettlements()[0].Food > 0, "food stored in centre");
+    }
+
+    // ---- Finding 4 ------------------------------------------------------------------------------
+
+    private static void PromotionDoesNotStrandCarriedLoad()
+    {
+        var rows = Enumerable.Range(0, 24).Select(y => y is 0 or 23 ? new string('^', 24) : "^" + new string('.', 22) + "^").ToList();
+        var map = MapOverride.FromRows(rows);
+        var world = new SimulationWorld(new SimulationOptions
+        {
+            WorldId = W,
+            Seed = 404,
+            MapWidth = 24,
+            MapHeight = 24,
+            Map = map,
+            Species = Default,
+            Vitals = new VitalsConfig(0, 0, 0, 0, 0, 250_000, 100_000, 4),
+            Mind = MindConfig.Default with { FatiguePerTick = 0 },
+            Settlements = SettlementConfig.Default with { FarmPlots = 1, WoodTarget = 0, FoodTarget = 60 },
+            Grants = ImmutableSortedDictionary<long, AuthorityGrant>.Empty.Add(God, AuthorityGrant.God),
+        });
+
+        world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 10, 10, Faction.Human, "Keep"));
+        world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 10, 10, Human));
+        world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 10, 10, Human));
+        world.Step();
+        long cursor = world.ReadEvents(0, 1).LatestSequence;
+
+        // Wait for one guard and for the other member to harvest crops.
+        long worker = 0;
+        long guard = 0;
+        long harvestedAmount = 0;
+        for (int t = 0; t < 100 && harvestedAmount == 0; t++)
+        {
+            var batch = Run(world, 1, ref cursor);
+            var h = batch.FirstOrDefault(e => e.Kind == EventKinds.Harvested);
+            if (h.Kind == EventKinds.Harvested)
+            {
+                worker = h.Actor;
+                harvestedAmount = h.Amount;
+                guard = world.ReadSnapshot().Chunks.SelectMany(c => c)
+                    .Single(r => r.Id.Value != worker && world.ReadEntityDetails(W, r.Id)!.Job == Job.Guard).Id.Value;
+            }
+        }
+        Check(harvestedAmount > 0 && worker != 0 && guard != 0, "worker harvested while guard active");
+
+        // Remove the current guard right after the worker harvests, then step through the worker's next think and delivery.
+        world.KillForTest(guard);
+        var afterEvents = Run(world, 60, ref cursor);
+        var deposits = afterEvents.Where(e => e.Kind == EventKinds.Deposited && e.Actor == worker).ToList();
+        Check(deposits.Count == 1 && deposits[0].Amount == harvestedAmount,
+            $"expected one deposit of {harvestedAmount}, got {deposits.Count} ({deposits.Sum(d => d.Amount)})");
+        var details = world.ReadEntityDetails(W, new EntityId(worker))!;
+        Check(details.CarryAmount == 0, $"no stranded cargo (carry={details.CarryAmount})");
+        Check(details.Job == Job.Guard && world.ReadSettlements()[0].Guards == 1, $"worker eventually replaced guard (job={details.Job}, guards={world.ReadSettlements()[0].Guards})");
+        Check(world.ReadSettlements()[0].Food == harvestedAmount, $"exact town food {harvestedAmount}, got {world.ReadSettlements()[0].Food}");
     }
 }

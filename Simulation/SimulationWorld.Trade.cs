@@ -148,10 +148,12 @@ public sealed partial class SimulationWorld
 
     private int GuardsWanted(Settlement s) => Math.Max(1, s.Members / TradeCfg.MembersPerGuard);
 
-    // Called on think: an adult member volunteers while the town has fewer guards than it needs.
+    // Called on think: an adult member volunteers while the town has fewer guards than it needs,
+    // deferring while carrying goods or executing an in-flight work/collection action.
     private void MaybeBecomeGuard(EntityState e, long now)
     {
-        if (SettlementOf(e) is not { } s || e.Job == Job.Guard || e.OnTrip || StageOf(e, now) == LifeStage.Juvenile) return;
+        if (SettlementOf(e) is not { } s || e.Job == Job.Guard || e.OnTrip || e.CarryAmount > 0
+            || e.Mind.Kind == ActionKind.Work || StageOf(e, now) == LifeStage.Juvenile) return;
         if (s.Guards >= GuardsWanted(s)) return;
         e.Job = Job.Guard;
         s.Guards++;

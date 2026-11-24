@@ -142,6 +142,9 @@ public sealed partial class SimulationWorld
         int cell = Cell(c.X, c.Y);
         foreach (var kind in new[] { ResourceKind.Food, ResourceKind.Water, ResourceKind.Wood })
             if (resources.Find(cell, kind) >= 0) return CommandReason.HasResource;
+        foreach (var s in settlements)
+            if (s.X == c.X && s.Y == c.Y && !TerrainRules.IsPassable(c.Terrain)) return CommandReason.Occupied;
+        if (PlotAt(cell) is not null && c.Terrain != Terrain.Grass) return CommandReason.Occupied;
         if (!TerrainRules.IsPassable(c.Terrain) && NearbyIds(c.X, c.Y, 0).Count > 0) return CommandReason.Occupied;
         terrain[cell] = c.Terrain;
         map = new MapView(options.MapWidth, options.MapHeight, System.Collections.Immutable.ImmutableArray.Create(terrain));
