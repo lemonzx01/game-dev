@@ -55,6 +55,15 @@ public partial class InspectorPanel : Label
             var town = bridge.Settlements()[d.SettlementId - 1];
             sb.AppendLine($"lives in {town.Name}  job {d.Job}" + (d.CarryAmount > 0 ? $"  carrying {d.CarryAmount} {d.CarryKind}" : ""));
         }
+        if (bridge.Skills(id) is { } k)
+        {
+            var parts = new System.Collections.Generic.List<string>();
+            void Add(string name, int level, long xp) { if (xp > 0) parts.Add($"{name} {level} ({xp}xp)"); }
+            Add("farm", k.FarmingLevel, k.Farming); Add("forage", k.ForagingLevel, k.Foraging); Add("wood", k.WoodcuttingLevel, k.Woodcutting);
+            Add("combat", k.CombatLevel, k.Combat); Add("trade", k.TradingLevel, k.Trading); Add("lore", k.ScholarshipLevel, k.Scholarship);
+            if (parts.Count > 0) sb.AppendLine("skills: " + string.Join("  ", parts));
+            if (k.BooksStarted > 0) sb.AppendLine($"books: {k.BooksFinished} finished of {k.BooksStarted} started");
+        }
         if (bridge.Mind(id) is { } m)
         {
             sb.AppendLine($"bravery {m.Bravery}  sociability {m.Sociability}  fear {m.Fear}");

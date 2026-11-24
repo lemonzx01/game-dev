@@ -29,6 +29,7 @@ public sealed record SimulationOptions
     public ClimateConfig Climate { get; init; } = ClimateConfig.Default;
     public SettlementConfig Settlements { get; init; } = SettlementConfig.Default;
     public TradeConfig Trade { get; init; } = TradeConfig.Default;
+    public SkillConfig Skills { get; init; } = SkillConfig.Default;
     /// <summary>Optional hand-built map; when set, MapWidth/MapHeight must equal its size and no terrain/resources are generated.</summary>
     public MapOverride? Map { get; init; }
     public ImmutableSortedDictionary<long, AuthorityGrant> Grants { get; init; } = ImmutableSortedDictionary<long, AuthorityGrant>.Empty;
@@ -58,6 +59,7 @@ public sealed record SimulationOptions
         Climate.Validate();
         Settlements.Validate();
         Trade.Validate();
+        Skills.Validate();
         if (Map is not null && (Map.Width != MapWidth || Map.Height != MapHeight || Map.Cells.Length != MapWidth * MapHeight))
             throw new ArgumentException("Map override size must match MapWidth/MapHeight.");
         foreach (var (issuer, grant) in Grants)

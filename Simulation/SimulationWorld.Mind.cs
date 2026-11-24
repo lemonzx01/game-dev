@@ -166,7 +166,7 @@ public sealed partial class SimulationWorld
         var townThreat = TownThreat(e);
         var v = e.Vitals.At(now, options.Vitals);
         long fatigue = FatigueAt(e.Mind, now);
-        Span<(int Score, ActionKind Kind)> candidates = stackalloc (int, ActionKind)[9];
+        Span<(int Score, ActionKind Kind)> candidates = stackalloc (int, ActionKind)[10];
         int n = 0;
         if (townThreat is not null) // guards stand and fight threats inside the town (T016)
             candidates[n++] = (TradeCfg.DefendScore, ActionKind.Defend);
@@ -187,6 +187,9 @@ public sealed partial class SimulationWorld
         // Settlement work when nothing urgent: what the town needs (deliver, harvest, gather food or wood).
         if (threat is null && e.SettlementId != 0 && (current == ActionKind.Work || PlanWork(e) != WorkGoal.None))
             candidates[n++] = (TownCfg.WorkScore, ActionKind.Work);
+        // Reading when fed, safe and the town has no work for this member (T017).
+        if (threat is null && (current == ActionKind.Read || WantsToRead(e, v)))
+            candidates[n++] = (SkillCfg.ReadScore, ActionKind.Read);
         candidates[n++] = (50, ActionKind.Wander);
         for (int i = 0; i < n; i++)
             if (candidates[i].Kind == current) candidates[i].Score += cfg.InertiaBonus;
@@ -207,6 +210,7 @@ public sealed partial class SimulationWorld
 
     private bool TryStart(EntityState e, ActionKind kind, EntityState? threat, long now)
     {
+        if (kind == ActionKind.Read && (OnCooldown(e.Mind, kind, now) || !WantsToRead(e, e.Vitals.At(now, options.Vitals)))) return false;
         int[]? path = null;
         int wanderCell = -1;
         long huntTarget = 0;
@@ -243,6 +247,7 @@ public sealed partial class SimulationWorld
                 break;
         }
 
+        FinishReading(e, now); // switching away mid-session credits exactly the pages read so far
         SetResting(e, kind == ActionKind.Rest, now);
         e.Mind.Kind = kind;
         e.Action = (int)kind;
@@ -263,7 +268,7 @@ public sealed partial class SimulationWorld
             long ticks = Math.Max(1, (fatigue - MindCfg.RestEndFatigue + MindCfg.RestRecoveryPerTick - 1) / MindCfg.RestRecoveryPerTick);
             ScheduleStep(e, now + ticks);
         }
-        else if (kind is ActionKind.Eat or ActionKind.Drink or ActionKind.Work)
+        else if (kind is ActionKind.Eat or ActionKind.Drink or ActionKind.Work or ActionKind.Read)
         {
             RequestPath(e, kind); // searched later within the per-tick path budget
         }
@@ -276,6 +281,7 @@ public sealed partial class SimulationWorld
 
     private void StartIdle(EntityState e, long now)
     {
+        FinishReading(e, now);
         SetResting(e, false, now);
         e.Mind.Kind = ActionKind.Idle;
         e.Action = (int)ActionKind.Idle;
@@ -320,7 +326,9 @@ public sealed partial class SimulationWorld
             case ActionKind.Eat:
             case ActionKind.Drink:
             case ActionKind.Work:
+            case ActionKind.Read:
             case ActionKind.Wander:
+                if (e.Mind.Kind == ActionKind.Read && e.ReadingSince > 0) { FinishAction(e, now); return; } // session over
                 var path = e.Mind.Path!;
                 if (e.Mind.PathIndex < path.Length)
                 {
@@ -334,6 +342,7 @@ public sealed partial class SimulationWorld
                     StartIdle(e, now); // the regular think cadence continues; no early re-think
                     return;
                 }
+                if (e.Mind.Kind == ActionKind.Read) { StartReading(e, now); return; }
                 if (e.Mind.Kind == ActionKind.Work) { DoWork(e, now); FinishAction(e, now); return; }
                 if (e.Mind.Kind == ActionKind.Eat && EatFromStorage(e, now)) { FinishAction(e, now); return; }
                 if (e.Mind.Kind == ActionKind.Drink) TryConsume(e.Id, ResourceKind.Water, now);

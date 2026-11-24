@@ -426,6 +426,7 @@ public sealed partial class SimulationWorld : ISimulation
         options.Climate.WriteCanonical(writer);
         options.Settlements.WriteCanonical(writer);
         options.Trade.WriteCanonical(writer);
+        options.Skills.WriteCanonical(writer);
         var psy = options.Psyche;
         foreach (int v in new[] { psy.MemoryCap, psy.RelationshipCap, psy.FearDecayPerTick, psy.TraitJitter, psy.DangerMemoryTicks, psy.DangerAvoidRadius, psy.FearBlocksMatingAbove })
             writer.Write(v);

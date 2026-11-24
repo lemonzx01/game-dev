@@ -55,6 +55,7 @@ internal sealed class Settlement
     public long Food, Wood;   // storage stock, never negative
     public long Coins;        // treasury (T016): founding grant, then only trade payments
     public int Members, Guards, TradersOut;
+    public int Books = 1;     // T017: each town keeps one book (Almanac) at its centre
     public long FoundedTick;
     public readonly List<FarmPlot> Plots = new();
 }
@@ -227,11 +228,12 @@ public sealed partial class SimulationWorld
             case WorkGoal.Harvest:
                 if (PlotAt(cell) is not { } hit || hit.Town != s || s.Plots[hit.Index].Crop <= 0) break;
                 var plot = s.Plots[hit.Index];
-                int crop = Math.Min(plot.Crop, capacity);
+                int crop = Math.Min(plot.Crop, capacity + Level(e, Skill.Farming) / 2); // skilled farmers bring more
                 plot.Crop -= crop;
                 Load(e, ResourceKind.Food, crop);
                 ScheduleCrop(s, hit.Index, now);
                 Emit(new WorldEvent(0, now, EventKinds.Harvested, 0, e.Id.Value, s.Id, e.X, e.Y, (int)ResourceKind.Food, crop));
+                GainXp(e, Skill.Farming, (long)crop * SkillCfg.XpPerHarvestUnit, now);
                 break;
             case WorkGoal.TradeLoad:
                 LoadTrade(e, s, now);
@@ -248,11 +250,13 @@ public sealed partial class SimulationWorld
                 int node = resources.Find(cell, kind);
                 if (node < 0 || resources[node].Amount <= 0) break;
                 ref var stock = ref resources[node];
-                int take = Math.Min(stock.Amount, capacity);
+                var skill = kind == ResourceKind.Food ? Skill.Foraging : Skill.Woodcutting;
+                int take = Math.Min(stock.Amount, capacity + Level(e, skill) / 2);
                 stock.Amount -= take;
                 Load(e, kind, take);
                 ScheduleRegrowth(node, now);
                 Emit(new WorldEvent(0, now, EventKinds.Gathered, 0, e.Id.Value, s.Id, e.X, e.Y, (int)kind, take));
+                GainXp(e, skill, (long)take * SkillCfg.XpPerGatherUnit, now);
                 break;
         }
     }
@@ -311,7 +315,7 @@ public sealed partial class SimulationWorld
             w.Write(s.X); w.Write(s.Y);
             w.Write(s.Food); w.Write(s.Wood);
             w.Write(s.FoundedTick);
-            w.Write(s.Coins); w.Write(s.Members); w.Write(s.Guards); w.Write(s.TradersOut);
+            w.Write(s.Coins); w.Write(s.Members); w.Write(s.Guards); w.Write(s.TradersOut); w.Write(s.Books);
             w.Write((uint)s.Plots.Count);
             foreach (var p in s.Plots) { w.Write(p.Cell); w.Write(p.Crop); w.Write(p.GrowScheduled); }
         }
@@ -330,7 +334,7 @@ public sealed partial class SimulationWorld
             s.X = r.ReadInt32(); s.Y = r.ReadInt32();
             s.Food = r.ReadInt64(); s.Wood = r.ReadInt64();
             s.FoundedTick = r.ReadInt64();
-            s.Coins = r.ReadInt64(); s.Members = r.ReadInt32(); s.Guards = r.ReadInt32(); s.TradersOut = r.ReadInt32();
+            s.Coins = r.ReadInt64(); s.Members = r.ReadInt32(); s.Guards = r.ReadInt32(); s.TradersOut = r.ReadInt32(); s.Books = r.ReadInt32();
             if (s.Coins < 0 || s.Members < 0 || s.Guards < 0 || s.TradersOut < 0) throw new InvalidDataException("Settlement counters invalid.");
             if (s.Id != i + 1 || !Enum.IsDefined(s.Faction) || !InBounds(s.X, s.Y) || s.Food < 0 || s.Wood < 0)
                 throw new InvalidDataException("Settlement invalid.");

@@ -90,8 +90,9 @@ public sealed partial class SimulationWorld
 
     private void Attack(EntityState attacker, EntityState prey, long now)
     {
-        long damage = AttackPower(attacker);
+        long damage = AttackPower(attacker) * (100 + 10 * Level(attacker, Skill.Combat)) / 100; // experienced fighters hit harder
         if (damage <= 0 || prey.LifeState != LifeStates.Alive) return;
+        GainXp(attacker, Skill.Combat, SkillCfg.XpPerHit, now);
         var v = prey.Vitals.At(now, options.Vitals);
         long health = Math.Max(0, v.Health - damage);
         Emit(new WorldEvent(0, now, EventKinds.Attacked, 0, attacker.Id.Value, prey.Id.Value, prey.X, prey.Y, 0, v.Health - health));
