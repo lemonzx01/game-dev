@@ -254,7 +254,9 @@ public sealed partial class SimulationWorld
             var key = new WorkKey(r.ReadInt64(), r.ReadInt32(), r.ReadInt64(), r.ReadInt64());
             var item = new WorkItem((WorkKind)r.ReadInt32(), r.ReadInt64(), r.ReadInt64());
             bool isRequired = r.ReadBoolean();
-            Require(Enum.IsDefined(item.Kind) && key.DueTick > running, "Scheduled work invalid.");
+            // Required work always runs at its due tick, so it must lie in the future. Discretionary work (decisions)
+            // over the per-tick budget is carried forward on purpose and may already be overdue.
+            Require(Enum.IsDefined(item.Kind) && key.DueTick >= 0 && (!isRequired || key.DueTick > running), "Scheduled work invalid.");
             work.Add((item, key, isRequired));
         }
         scheduler.Restore(nextOrdinal, running, work);

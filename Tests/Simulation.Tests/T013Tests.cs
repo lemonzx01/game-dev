@@ -16,6 +16,7 @@ internal static class T013Tests
         ("T013 malformed saves rejected without side effects", Malformed),
         ("T013 N2 history bound to the save timeline", HistoryTimeline),
         ("T013 file save is atomic with backup; failure keeps old save", FileSafety),
+        ("T013 save with carried-over decision backlog loads and continues", DecisionBacklog),
     ];
 
     private static void Check(bool ok, string message)
@@ -177,6 +178,28 @@ internal static class T013Tests
         Check(b.ReadEntityDetails(W, new EntityId(1)) is { DeathCause: DeathCause.Starvation }, "B keeps the death");
         for (int t = 0; t < 15; t++) a.Step();
         Check(a.StateHash() == b.StateHash(), "A continued to B's tick reproduces B exactly");
+    }
+
+    private static void DecisionBacklog()
+    {
+        // Regression (found by the T014 benchmark): with a tiny decision budget, overdue discretionary work is pending
+        // at save time. That is valid carry-forward state and must load and continue identically.
+        var world = new SimulationWorld(new SimulationOptions
+        {
+            WorldId = W, Seed = 7, MapWidth = 48, MapHeight = 48, Species = Default, DiscretionaryWorkBudget = 3,
+            Grants = ImmutableSortedDictionary<long, AuthorityGrant>.Empty.Add(God, AuthorityGrant.God),
+        });
+        var map = world.ReadMap();
+        var land = Enumerable.Range(0, map.Cells.Length).Where(i => map.Cells[i] is Terrain.Grass or Terrain.Forest).Take(120).ToList();
+        foreach (int c in land) world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, c % 48, c / 48, Rabbit));
+        for (int t = 0; t < 40; t++) world.Step();
+        var loaded = LoadBytes(SaveBytes(world));
+        for (int t = 0; t < 200; t++)
+        {
+            world.Step();
+            loaded.Step();
+        }
+        Check(loaded.StateHash() == world.StateHash(), "backlogged world continues identically after load");
     }
 
     private static void FileSafety()
