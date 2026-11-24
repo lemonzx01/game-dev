@@ -3,13 +3,14 @@ namespace FantasyWorld.Simulation;
 /// <summary>Trade and guard tuning (units, coins, ticks). Defaults are provisional.</summary>
 public sealed record TradeConfig(int StartingCoins = 100, int FoodPrice = 2, int WoodPrice = 3, int LoadUnits = 8,
     int SurplusFactor = 2, int MaxTradersOut = 1, int RouteSearchesPerTick = 2,
-    int MembersPerGuard = 8, long GuardDamage = 350_000, int DefendScore = 4000)
+    int MembersPerGuard = 8, long GuardDamage = 350_000, int DefendScore = 4000,
+    int RouteNodeBudget = 2000, int UnreachableCooldownTicks = 300)
 {
     public static TradeConfig Default { get; } = new();
 
     internal void Validate()
     {
-        foreach (int v in new[] { FoodPrice, WoodPrice, LoadUnits, SurplusFactor, MaxTradersOut, RouteSearchesPerTick, MembersPerGuard, DefendScore })
+        foreach (int v in new[] { FoodPrice, WoodPrice, LoadUnits, SurplusFactor, MaxTradersOut, RouteSearchesPerTick, MembersPerGuard, DefendScore, RouteNodeBudget, UnreachableCooldownTicks })
             ArgumentOutOfRangeException.ThrowIfLessThan(v, 1);
         ArgumentOutOfRangeException.ThrowIfNegative(StartingCoins);
         ArgumentOutOfRangeException.ThrowIfLessThan(GuardDamage, 1);
@@ -17,7 +18,7 @@ public sealed record TradeConfig(int StartingCoins = 100, int FoodPrice = 2, int
 
     internal void WriteCanonical(BinaryWriter w)
     {
-        foreach (long v in new long[] { StartingCoins, FoodPrice, WoodPrice, LoadUnits, SurplusFactor, MaxTradersOut, RouteSearchesPerTick, MembersPerGuard, GuardDamage, DefendScore })
+        foreach (long v in new long[] { StartingCoins, FoodPrice, WoodPrice, LoadUnits, SurplusFactor, MaxTradersOut, RouteSearchesPerTick, MembersPerGuard, GuardDamage, DefendScore, RouteNodeBudget, UnreachableCooldownTicks })
             w.Write(v);
     }
 
@@ -53,7 +54,7 @@ public sealed partial class SimulationWorld
             int bestDistance = int.MaxValue;
             foreach (var p in settlements)
             {
-                if (p == s || (kind == ResourceKind.Food ? p.Food : p.Wood) >= target || p.Coins < TradeCfg.Price(kind)) continue;
+                if (p == s || s.BlockedBuyers.ContainsKey(p.Id) || (kind == ResourceKind.Food ? p.Food : p.Wood) >= target || p.Coins < TradeCfg.Price(kind)) continue;
                 int d = Math.Max(Math.Abs(p.X - s.X), Math.Abs(p.Y - s.Y));
                 if (d < bestDistance) { best = p; bestDistance = d; }
             }
@@ -63,6 +64,32 @@ public sealed partial class SimulationWorld
     }
 
     private bool IsLongRoute(WorkGoal goal) => goal is WorkGoal.TradeTravel or WorkGoal.ReturnHome;
+
+    // Terminal outbound trade failure: switch to returning the cargo, keep the trader slot until home/death,
+    // and suppress immediate rebooking of the same unreachable buyer.
+    private void FailTradeOutbound(EntityState e, long now)
+    {
+        if (SettlementOf(e) is { } home && e.TradePartner > 0)
+        {
+            long until = now + TradeCfg.UnreachableCooldownTicks;
+            if (!home.BlockedBuyers.TryGetValue(e.TradePartner, out long existing) || until > existing)
+                home.BlockedBuyers[e.TradePartner] = until;
+        }
+        e.TradePartner = 0;
+    }
+
+    private void PruneBlockedBuyers(long now)
+    {
+        foreach (var s in settlements)
+        {
+            if (s.BlockedBuyers.Count == 0) continue;
+            List<int>? expired = null;
+            foreach (var (partner, until) in s.BlockedBuyers)
+                if (until <= now) (expired ??= new()).Add(partner);
+            if (expired is not null)
+                foreach (int partner in expired) s.BlockedBuyers.Remove(partner);
+        }
+    }
 
     // Loads trade goods at the home centre (the trader is standing there).
     private void LoadTrade(EntityState e, Settlement s, long now)
@@ -155,6 +182,7 @@ public sealed partial class SimulationWorld
         s.Members--;
         if (e.Job == Job.Guard) s.Guards--;
         if (e.OnTrip) { e.OnTrip = false; s.TradersOut--; }
+        e.TradePartner = 0;
     }
 
     // ---- Test hooks ----------------------------------------------------------------------------

@@ -27,9 +27,18 @@ public sealed partial class SimulationWorld
     private bool OnCooldown(in MindState m, ActionKind kind, long now) =>
         (kind switch { ActionKind.Eat => m.NoFoodUntil, ActionKind.Work or ActionKind.Read or ActionKind.Tame => m.NoWorkUntil, _ => m.NoWaterUntil }) > now;
 
+    private (int X, int Y)? LongRouteGoal(EntityState e) => e.WorkGoal switch
+    {
+        WorkGoal.TradeTravel when e.TradePartner > 0 && e.TradePartner <= settlements.Count =>
+            (settlements[e.TradePartner - 1].X, settlements[e.TradePartner - 1].Y),
+        WorkGoal.ReturnHome when SettlementOf(e) is { } home => (home.X, home.Y),
+        _ => null,
+    };
+
     private void ProcessPaths(long now)
     {
         long remaining = MindCfg.PathNodeBudgetPerTick;
+        long longBudget = Math.Min(TradeCfg.RouteNodeBudget, MindCfg.PathNodeBudgetPerTick);
         LastPathExpansions = 0;
         LastPathsServed = 0;
         routeSearchesLeft = TradeCfg.RouteSearchesPerTick;
@@ -44,32 +53,47 @@ public sealed partial class SimulationWorld
                 pathQueue.Dequeue();
                 continue;
             }
-            // Trade trips search the whole map (T016) under their own per-tick count; the FIFO order is kept either way.
+            // Long trade/return routes share the per-tick node budget and count all expansions.
             bool longRoute = request.Kind == ActionKind.Work && IsLongRoute(e.WorkGoal);
-            if (longRoute ? routeSearchesLeft == 0 : remaining < MindCfg.SearchNodeBudget) break;
+            long budget = longRoute ? longBudget : MindCfg.SearchNodeBudget;
+            if (remaining < budget || (longRoute && routeSearchesLeft == 0)) break;
             pathQueue.Dequeue();
             if (longRoute) routeSearchesLeft--;
             navigation ??= new Navigation(terrain.Length);
-            var path = navigation.FindNearest(terrain, options.MapWidth, options.MapHeight, e.X, e.Y,
-                longRoute ? Math.Max(options.MapWidth, options.MapHeight) : MindCfg.PerceptionRadius,
-                longRoute ? terrain.Length : MindCfg.SearchNodeBudget,
-                cell => request.Kind switch
-                {
-                    ActionKind.Eat => CanEatAt(e, cell),
-                    ActionKind.Work => IsWorkGoal(e, cell),
-                    ActionKind.Read => SettlementOf(e) is { } home && cell == Cell(home.X, home.Y),
-                    _ => CanConsumeAt(cell, ResourceKind.Water),
-                }, out int expanded);
-            if (!longRoute)
+            int expanded;
+            int[]? path;
+            if (longRoute)
             {
-                remaining -= expanded;
-                LastPathExpansions += expanded;
+                var goal = LongRouteGoal(e);
+                if (goal is { } g)
+                    path = navigation.FindPath(terrain, options.MapWidth, options.MapHeight, e.X, e.Y, g.X, g.Y, (int)budget, out expanded);
+                else
+                {
+                    expanded = 0;
+                    path = null;
+                }
             }
+            else
+            {
+                path = navigation.FindNearest(terrain, options.MapWidth, options.MapHeight, e.X, e.Y,
+                    MindCfg.PerceptionRadius, (int)budget,
+                    cell => request.Kind switch
+                    {
+                        ActionKind.Eat => CanEatAt(e, cell),
+                        ActionKind.Work => IsWorkGoal(e, cell),
+                        ActionKind.Read => SettlementOf(e) is { } home && cell == Cell(home.X, home.Y),
+                        _ => CanConsumeAt(cell, ResourceKind.Water),
+                    }, out expanded);
+            }
+            remaining -= expanded;
+            LastPathExpansions += expanded;
             LastPathsServed++;
             e.Mind.AwaitingPath = false;
             if (path is null)
             {
-                if (request.Kind == ActionKind.Eat) e.Mind.NoFoodUntil = now + MindCfg.UnreachableCooldownTicks;
+                if (request.Kind == ActionKind.Work && e.WorkGoal == WorkGoal.TradeTravel && e.TradePartner != 0)
+                    FailTradeOutbound(e, now); // immediate ReturnHome with cargo; deal suppressed for cooldown
+                else if (request.Kind == ActionKind.Eat) e.Mind.NoFoodUntil = now + MindCfg.UnreachableCooldownTicks;
                 else if (request.Kind is ActionKind.Work or ActionKind.Read) e.Mind.NoWorkUntil = now + TownCfg.WorkCooldownTicks;
                 else e.Mind.NoWaterUntil = now + MindCfg.UnreachableCooldownTicks;
                 Emit(new WorldEvent(0, now, EventKinds.PathFailed, 0, e.Id.Value, 0, e.X, e.Y, (int)request.Kind));
@@ -90,6 +114,11 @@ public sealed partial class SimulationWorld
             e.Mind.Replans++;
             RequestPath(e, e.Mind.Kind);
             return;
+        }
+        if (e.Mind.Kind == ActionKind.Work && e.WorkGoal == WorkGoal.TradeTravel && e.TradePartner != 0)
+        {
+            FailTradeOutbound(e, now);
+            Emit(new WorldEvent(0, now, EventKinds.PathFailed, 0, e.Id.Value, 0, e.X, e.Y, (int)e.Mind.Kind));
         }
         if (e.Mind.Kind == ActionKind.Wander) { StartIdle(e, now); return; }
         FinishAction(e, now);

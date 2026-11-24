@@ -58,6 +58,7 @@ internal sealed class Settlement
     public int Books = 1;     // T017: each town keeps one book (Almanac) at its centre
     public long FoundedTick;
     public readonly List<FarmPlot> Plots = new();
+    public readonly SortedDictionary<int, long> BlockedBuyers = new(); // buyer settlement id -> cooldown until tick
 }
 
 /// <summary>God tool: found a settlement of a faction at a passable tile, at least two radii from any other settlement.</summary>
@@ -174,7 +175,7 @@ public sealed partial class SimulationWorld
         if (SettlementOf(e) is not { } s || StageOf(e, tick + 1) == LifeStage.Juvenile || e.Job == Job.Guard) return WorkGoal.None;
         int far = Math.Max(Math.Abs(e.X - s.X), Math.Abs(e.Y - s.Y));
         if (e.CarryAmount > 0)
-            return e.TradePartner != 0 ? WorkGoal.TradeTravel : far > MindCfg.PerceptionRadius ? WorkGoal.ReturnHome : WorkGoal.Deliver;
+            return e.TradePartner != 0 ? WorkGoal.TradeTravel : (e.OnTrip || far > MindCfg.PerceptionRadius) ? WorkGoal.ReturnHome : WorkGoal.Deliver;
         if (e.OnTrip || far > TownCfg.Radius) return WorkGoal.ReturnHome;
         foreach (var p in s.Plots)
             if (p.Crop >= TownCfg.HarvestMinCrop) return WorkGoal.Harvest;
@@ -318,6 +319,8 @@ public sealed partial class SimulationWorld
             w.Write(s.Coins); w.Write(s.Members); w.Write(s.Guards); w.Write(s.TradersOut); w.Write(s.Books);
             w.Write((uint)s.Plots.Count);
             foreach (var p in s.Plots) { w.Write(p.Cell); w.Write(p.Crop); w.Write(p.GrowScheduled); }
+            w.Write((uint)s.BlockedBuyers.Count);
+            foreach (var (partner, until) in s.BlockedBuyers) { w.Write(partner); w.Write(until); }
         }
     }
 
@@ -344,6 +347,18 @@ public sealed partial class SimulationWorld
                 var p = new FarmPlot { Cell = r.ReadInt32(), Crop = r.ReadInt32(), GrowScheduled = r.ReadBoolean() };
                 if (p.Cell < 0 || p.Cell >= terrain.Length || p.Crop < 0 || p.Crop > TownCfg.CropMax) throw new InvalidDataException("Farm plot invalid.");
                 s.Plots.Add(p);
+            }
+            uint blockedCount = r.ReadUInt32();
+            if (blockedCount > (uint)n) throw new InvalidDataException("Blocked buyers count invalid.");
+            int lastPartner = 0;
+            for (int k = 0; k < (int)blockedCount; k++)
+            {
+                int partner = r.ReadInt32();
+                long until = r.ReadInt64();
+                if (partner <= lastPartner || partner > n || partner == s.Id || until <= tick)
+                    throw new InvalidDataException("Blocked buyer entry invalid.");
+                s.BlockedBuyers.Add(partner, until);
+                lastPartner = partner;
             }
             settlements.Add(s);
         }

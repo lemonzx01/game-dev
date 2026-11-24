@@ -103,6 +103,7 @@ public sealed partial class SimulationWorld : ISimulation
             droppedThisTick = 0;
             // Entities that died on the previous tick were visible as Dead in that tick's snapshot; drop them now.
             entities.RemoveAll(e => e.LifeState == LifeStates.Dead);
+            PruneBlockedBuyers(next);
             while (commands.Count > 0 && commands.Peek().TargetTick == next)
                 Execute(commands.Dequeue(), next);
             LastDiscretionaryRun = scheduler.Run(next, item => RunWork(item, next));
