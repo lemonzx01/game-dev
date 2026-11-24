@@ -88,24 +88,6 @@ public sealed partial class SimulationWorld
 
     // ---- Attacks and kills ---------------------------------------------------------------------
 
-    private void Attack(EntityState attacker, EntityState prey, long now)
-    {
-        long damage = AttackPower(attacker) * (100 + 10 * Level(attacker, Skill.Combat)) / 100; // experienced fighters hit harder
-        if (damage <= 0 || prey.LifeState != LifeStates.Alive) return;
-        GainXp(attacker, Skill.Combat, SkillCfg.XpPerHit, now);
-        var v = prey.Vitals.At(now, options.Vitals);
-        long health = Math.Max(0, v.Health - damage);
-        Emit(new WorldEvent(0, now, EventKinds.Attacked, 0, attacker.Id.Value, prey.Id.Value, prey.X, prey.Y, 0, v.Health - health));
-        if (health == 0)
-        {
-            Die(prey, now, attacker.Job == Job.Guard ? DeathCause.Combat : DeathCause.Predation, attacker.Id.Value);
-            attacker.Mind.NoFoodUntil = 0; // the killer knows where fresh meat is
-            return;
-        }
-        prey.Vitals = new VitalsAnchor(now, v.Hunger, v.Thirst, health);
-        ScheduleDeath(prey); // the old booking becomes stale
-        OnAttacked(prey, attacker, now);
-    }
 
     // ---- Hunting -------------------------------------------------------------------------------
 
@@ -120,7 +102,8 @@ public sealed partial class SimulationWorld
         {
             if (id == e.Id.Value) return;
             var other = entities[FindLive(id)];
-            if (other.LifeState != LifeStates.Alive || !hunts.Contains(other.Species)) return;
+            if (other.LifeState != LifeStates.Alive || !hunts.Contains(other.Species) || !CanHarm(e, other)) return;
+            if (e.TamedTo != 0 && (SpeciesOf(other)?.Domestic == true || other.TamedTo != 0)) return; // tamed hunters spare livestock and pets
             if (Math.Max(Math.Abs(other.X - e.X), Math.Abs(other.Y - e.Y)) > r) return;
             int d = Math.Abs(other.X - e.X) + Math.Abs(other.Y - e.Y);
             if (d < bestDistance || (d == bestDistance && other.Id.Value < best!.Id.Value)) { best = other; bestDistance = d; }
@@ -143,6 +126,13 @@ public sealed partial class SimulationWorld
             return;
         }
         int distance = Math.Abs(prey.X - e.X) + Math.Abs(prey.Y - e.Y);
+        // Casters defending keep their distance and spend mana on Firebolt while it lasts (T019).
+        if (distance > 1 && e.Mind.Kind == ActionKind.Defend && now >= e.Mind.AttackReadyTick && CastFirebolt(e, prey, now))
+        {
+            e.Mind.AttackReadyTick = now + MagicCfg.CastIntervalTicks;
+            ScheduleStep(e, e.Mind.AttackReadyTick);
+            return;
+        }
         if (distance <= 1)
         {
             if (now >= e.Mind.AttackReadyTick)
@@ -177,7 +167,7 @@ public sealed partial class SimulationWorld
     /// <summary>True if moving to (x, y) keeps a domestic animal inside its leash, or brings it closer to home.</summary>
     private bool WithinLeash(EntityState e, int x, int y)
     {
-        if (SettlementOf(e) is { } town) // members roam within the town radius
+        if ((SettlementOf(e) ?? TamedHome(e)) is { } town) // members and tamed animals roam within the town radius
         {
             int from = Math.Max(Math.Abs(e.X - town.X), Math.Abs(e.Y - town.Y));
             int to = Math.Max(Math.Abs(x - town.X), Math.Abs(y - town.Y));

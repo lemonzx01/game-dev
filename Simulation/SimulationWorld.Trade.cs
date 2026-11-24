@@ -139,7 +139,7 @@ public sealed partial class SimulationWorld
         grid.Query(s.X, s.Y, r, id =>
         {
             var other = entities[FindLive(id)];
-            if (other.LifeState != LifeStates.Alive || !Fears(guard, other.Species)) return;
+            if (other.LifeState != LifeStates.Alive || !ThreatTo(guard, other)) return;
             if (Math.Max(Math.Abs(other.X - s.X), Math.Abs(other.Y - s.Y)) > r) return;
             int d = Math.Abs(other.X - guard.X) + Math.Abs(other.Y - guard.Y);
             if (d < bestDistance || (d == bestDistance && other.Id.Value < best!.Id.Value)) { best = other; bestDistance = d; }
@@ -147,9 +147,6 @@ public sealed partial class SimulationWorld
         return best;
     }
 
-    /// <summary>Damage dealt by an attacker: guards fight with GuardDamage, animals with their species' attack.</summary>
-    private long AttackPower(EntityState attacker) =>
-        attacker.Job == Job.Guard ? TradeCfg.GuardDamage : SpeciesOf(attacker)?.AttackDamage ?? 0;
 
     // Membership bookkeeping when a member dies.
     private void LeaveSettlement(EntityState e)

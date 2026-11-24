@@ -94,7 +94,7 @@ public sealed partial class SimulationWorld
         {
             if (id == e.Id.Value) return;
             var other = entities[FindLive(id)];
-            if (other.LifeState != LifeStates.Alive || !Fears(e, other.Species)) return;
+            if (other.LifeState != LifeStates.Alive || !ThreatTo(e, other)) return;
             if (Math.Max(Math.Abs(other.X - e.X), Math.Abs(other.Y - e.Y)) > r) return;
             int d = Math.Abs(other.X - e.X) + Math.Abs(other.Y - e.Y);
             if (d < bestDistance || (d == bestDistance && other.Id.Value < best!.Id.Value)) { best = other; bestDistance = d; }
@@ -155,6 +155,7 @@ public sealed partial class SimulationWorld
         var (threat, distance) = NearestThreat(e);
         if (threat is not null) OnThreatSeen(e, threat, distance, now); // danger raises fear and is remembered
         ScheduleThink(e, now + (threat is null ? cfg.ThinkIntervalTicks : cfg.DangerThinkIntervalTicks));
+        TryHeal(e, now); // casters mend a wounded townmate nearby whenever they think (costs mana)
 
         var current = e.Mind.Kind;
         if (threat is null && current is not (ActionKind.Idle or ActionKind.Wander) && now < e.Mind.CommitUntil)
@@ -166,9 +167,10 @@ public sealed partial class SimulationWorld
         var townThreat = TownThreat(e);
         var v = e.Vitals.At(now, options.Vitals);
         long fatigue = FatigueAt(e.Mind, now);
-        Span<(int Score, ActionKind Kind)> candidates = stackalloc (int, ActionKind)[10];
+        Span<(int Score, ActionKind Kind)> candidates = stackalloc (int, ActionKind)[12];
         int n = 0;
-        if (townThreat is not null) // guards stand and fight threats inside the town (T016)
+        // Guards fight threats inside the town (T016); cornered or brave villagers with friends fight back (T019).
+        if (townThreat is not null || FightsBack(e, threat, distance, now))
             candidates[n++] = (TradeCfg.DefendScore, ActionKind.Defend);
         if (threat is not null)
             candidates[n++] = (FleeScore(e, distance, now), ActionKind.Flee); // personality and fear decide how close is too close
@@ -187,6 +189,9 @@ public sealed partial class SimulationWorld
         // Settlement work when nothing urgent: what the town needs (deliver, harvest, gather food or wood).
         if (threat is null && e.SettlementId != 0 && (current == ActionKind.Work || PlanWork(e) != WorkGoal.None))
             candidates[n++] = (TownCfg.WorkScore, ActionKind.Work);
+        // Taming a nearby wild animal when safe, fed and the town can spare food (T019).
+        if (threat is null && (current == ActionKind.Tame || (!OnCooldown(e.Mind, ActionKind.Tame, now) && WantsToTame(e, v, now))))
+            candidates[n++] = (TameCfg.TameScore, ActionKind.Tame);
         // Reading when fed, safe and the town has no work for this member (T017).
         if (threat is null && (current == ActionKind.Read || WantsToRead(e, v)))
             candidates[n++] = (SkillCfg.ReadScore, ActionKind.Read);
@@ -232,9 +237,13 @@ public sealed partial class SimulationWorld
                 huntTarget = mate.Id.Value;
                 break;
             case ActionKind.Defend:
-                if (TownThreat(e) is not { } intruder) return false;
+                if (DefendTarget(e, threat, now) is not { } intruder) return false;
                 huntTarget = intruder.Id.Value;
-                Emit(new WorldEvent(0, now, EventKinds.GuardAlert, 0, e.Id.Value, intruder.Id.Value, intruder.X, intruder.Y, e.SettlementId));
+                if (e.Job == Job.Guard) Emit(new WorldEvent(0, now, EventKinds.GuardAlert, 0, e.Id.Value, intruder.Id.Value, intruder.X, intruder.Y, e.SettlementId));
+                break;
+            case ActionKind.Tame:
+                if (OnCooldown(e.Mind, kind, now) || !WantsToTame(e, e.Vitals.At(now, options.Vitals), now) || TameCandidate(e) is not { } pet) return false;
+                huntTarget = pet.Id.Value;
                 break;
             case ActionKind.Work:
                 if (OnCooldown(e.Mind, kind, now) || PlanWork(e) is not (var goal and not WorkGoal.None)) return false;
@@ -253,8 +262,8 @@ public sealed partial class SimulationWorld
         e.Action = (int)kind;
         e.Mind.Path = kind == ActionKind.Wander ? [wanderCell] : path;
         e.Mind.PathIndex = 0;
-        e.Mind.TargetEntity = kind is ActionKind.Hunt or ActionKind.Mate or ActionKind.Defend ? huntTarget : threat?.Id.Value ?? 0;
-        e.Mind.HuntUntil = now + (kind == ActionKind.Mate ? options.Ecology.MateGiveUpTicks : options.Ecology.HuntGiveUpTicks);
+        e.Mind.TargetEntity = kind is ActionKind.Hunt or ActionKind.Mate or ActionKind.Defend or ActionKind.Tame ? huntTarget : threat?.Id.Value ?? 0;
+        e.Mind.HuntUntil = now + (kind switch { ActionKind.Mate => options.Ecology.MateGiveUpTicks, ActionKind.Tame => TameCfg.GiveUpTicks, _ => options.Ecology.HuntGiveUpTicks });
         e.Mind.AttackReadyTick = now;
         e.Mind.FleeStepsDone = 0;
         e.Mind.Replans = 0;
@@ -312,6 +321,9 @@ public sealed partial class SimulationWorld
                 return;
             case ActionKind.Mate:
                 MateStep(e, now);
+                return;
+            case ActionKind.Tame:
+                TameStep(e, now);
                 return;
             case ActionKind.Flee:
                 var threat = FindLive(e.Mind.TargetEntity) is int ti and >= 0 ? entities[ti] : null;
