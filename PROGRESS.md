@@ -6,6 +6,15 @@ T001–T014 DONE and merged to main (2026-11-24; T003–T014 merged by owner ins
 
 ## Handoff log
 
+**2026-11-25 | Google Antigravity | FIX-R1 review fixes for T015–T017 | main | merged (self-reviewed, A009)**
+
+- Fixed all 12 findings from `docs/reviews/2026-11-codex-review-T015-T017.md` on branch `fix/R1-review-T015-T017` (`Simulation/**`, `Tests/**`, `docs/handoffs/FIX-R1.md` only; `ReadSettlements()` signature unchanged, zero `Game/**` changes):
+  - **High (#1–#2):** Outbound trade failures return cargo via `ReturnHome`, keep/release `TradersOut` once on arrival or death, and suppress `(seller, buyer)` for `TradeConfig.UnreachableCooldownTicks`; long routes (`TradeTravel`/`ReturnHome`) use bounded deterministic A* (`Navigation.FindPath`) capped at `min(RouteNodeBudget, PathNodeBudgetPerTick)` and counted in `LastPathExpansions`/`remaining`.
+  - **Medium (#3–#11):** `ApplyTerrain` rejects edits incompatible with settlement centres/plots; `MaybeBecomeGuard` defers while `CarryAmount > 0` or `ActionKind.Work` is in flight; `CarryCapacity` and `GainXp` (`ScholarBonusPercentPerLevel <= 1000`, `Int128` clamp to `long.MaxValue`) prevent signed overflow; `Load` validates crop timers (`CropGrow`), unsigned collection lengths before narrowing, book keys/session timestamps, carry/trade invariants and reconciles `Members`/`Guards`/`TradersOut`; `T016Tests.Trade` reconciles both towns, payments, and per-actor cargo; `ReadSettlements` caches one O(entities) pass per completed tick; `TradeDeal` caches lookups per seller and `marketRevision` with buyer threshold tracking and load-time verification.
+  - **Low (#12):** `Found` skips candidate farm offsets with Manhattan distance `> 3`.
+- StateSchema bumped `13 -> 14` (`1 DD6B0AB8F7FD17B3104F74439801DFE39CD90344FF74DB07A0D325FC44AD5A7F`).
+- Merged `fix/R1-review-T015-T017` into `main`: `dotnet test Tests/Simulation.Tests -c Release -m:1` → **101/101** groups pass; `Game.csproj` Debug builds cleanly (0 warnings/errors); 1,000-entity 3,000-tick benchmark → `p50 1.926 ms, p99 5.180 ms, 88.1 KB/tick` (worktree run 1: `p99 3.058 ms, 88.0 KB/tick`; baseline `origin/main` in same session: `p99 6.316 ms, 88.0 KB/tick`). Handoff `docs/handoffs/FIX-R1.md`.
+
 **2026-11-25 | Claude Code | T018 playtest checklist, known issues, T020 design | main | docs**
 
 - docs/PLAYTEST.md (owner checklist, Thai, 15–30 min), docs/KNOWN_ISSUES.md (consolidated; new K1: guards never retreat from a dragon), docs/design/T020-possession.md (grants, commands, AI suspension, save/hash, tests, Godot controls, owner questions). PLAYING.md covers T015–T019 behaviour.
