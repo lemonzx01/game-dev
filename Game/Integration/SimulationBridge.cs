@@ -10,15 +10,23 @@ namespace Game.Integration;
 // per rendered frame, and drains WorldEvent via an exclusive cursor instead
 // of reading events off the snapshot (N3; ARCHITECTURE.md §3 "Events and
 // recovery"). Camera/UI code must read from here, never the reverse.
+// Pause, speed, single-step, selection and following are host concerns:
+// none of them enters the command stream (A007 §3).
 public partial class SimulationBridge : Node
 {
     [Export] public int TicksPerSecond = 10;
     [Export] public int MaxTicksPerFrame = 10;
     [Export] public int EventPageLimit = 256;
     [Export] public int MaxEventPagesPerFrame = 8;
+    [Export] public ulong Seed = 1;
+    // Opening population placed through ordinary God commands (0 = one test entity, as in T007).
+    [Export] public int StarterAnimals = 0;
+
+    private static readonly WorldId World = new(1);
+    private const long ScenarioAuthor = 1;
 
     private SimulationWorld simulation = null!;
-    private HostClock clock = null!;
+    public HostClock Clock { get; private set; } = null!;
     public MapView Map { get; private set; } = null!;
     public WorldSnapshot PreviousSnapshot { get; private set; } = null!;
     internal string StateHash() => simulation.StateHash();
@@ -28,36 +36,55 @@ public partial class SimulationBridge : Node
     public ImmutableArray<WorldEvent> EventsThisFrame { get; private set; } = ImmutableArray<WorldEvent>.Empty;
     public long EventCursor => eventCursor;
     public int TicksRanThisFrame { get; private set; }
-    public double BacklogSeconds => (double)clock.Backlog / TicksPerSecond;
+    public double BacklogSeconds => (double)Clock.Backlog / TicksPerSecond;
     public (long From, long Through)? LastGap { get; private set; }
+    public ImmutableSortedDictionary<int, SpeciesDef> Species => SpeciesCatalog.Default;
 
     public override void _Ready()
     {
-        clock = new HostClock(TicksPerSecond, MaxTicksPerFrame, System.Math.Max(64, MaxTicksPerFrame));
-        var worldId = new WorldId(1);
-        const long scenarioAuthor = 1;
+        Clock = new HostClock(TicksPerSecond, MaxTicksPerFrame, System.Math.Max(64, MaxTicksPerFrame));
         simulation = new SimulationWorld(new SimulationOptions
         {
-            WorldId = worldId, Seed = 1,
-            Grants = ImmutableSortedDictionary<long, AuthorityGrant>.Empty.Add(scenarioAuthor, AuthorityGrant.God)
+            WorldId = World, Seed = Seed, Species = SpeciesCatalog.Default,
+            Grants = ImmutableSortedDictionary<long, AuthorityGrant>.Empty.Add(ScenarioAuthor, AuthorityGrant.God)
         });
         Map = simulation.ReadMap();
-        // The opening scenario places one entity through the normal God command queue.
+        if (StarterAnimals <= 0) SpawnOneNearCenter();
+        else SpawnStarterPopulation(StarterAnimals);
+        PreviousSnapshot = Snapshot = simulation.ReadSnapshot();
+    }
+
+    // T007 opening scenario: one deer near the centre.
+    private void SpawnOneNearCenter()
+    {
         int center = Map.Height / 2 * Map.Width + Map.Width / 2;
         for (int offset = 0; offset < Map.Cells.Length; offset++)
         {
             int cell = (center + offset) % Map.Cells.Length;
             if (Map.Cells[cell] is Terrain.Water or Terrain.Mountain) continue;
-            simulation.SubmitCommand(new SpawnEntityCommand(worldId, scenarioAuthor, CommandModes.God,
-                cell % Map.Width, cell / Map.Width, 1));
+            simulation.SubmitCommand(new SpawnEntityCommand(World, ScenarioAuthor, CommandModes.God, cell % Map.Width, cell / Map.Width, 1));
             break;
         }
-        PreviousSnapshot = Snapshot = simulation.ReadSnapshot();
+    }
+
+    // Mixed herd spread over land in a fixed pattern (deterministic for a given seed); arrives on tick 1.
+    private void SpawnStarterPopulation(int count)
+    {
+        int[] mix = [SpeciesCatalog.Deer, SpeciesCatalog.Rabbit, SpeciesCatalog.Sheep, SpeciesCatalog.Rabbit, SpeciesCatalog.Deer, SpeciesCatalog.Rabbit, SpeciesCatalog.Sheep, SpeciesCatalog.Wolf];
+        int placed = 0;
+        int step = System.Math.Max(1, Map.Cells.Length / (count * 2)) | 1; // odd stride spreads the herd over the whole map
+        for (int cell = 0; cell < Map.Cells.Length && placed < count; cell += step)
+        {
+            if (Map.Cells[cell] is not (Terrain.Grass or Terrain.Forest)) continue;
+            var receipt = simulation.SubmitCommand(new SpawnEntityCommand(World, ScenarioAuthor, CommandModes.God, cell % Map.Width, cell / Map.Width, mix[placed % mix.Length]));
+            if (receipt.Status != "Queued") break; // command queue full: stop rather than drop silently
+            placed++;
+        }
     }
 
     public override void _Process(double delta)
     {
-        TicksRanThisFrame = clock.Update(delta);
+        TicksRanThisFrame = Clock.Update(delta);
         for (int i = 0; i < TicksRanThisFrame; i++)
             simulation.Step();
         if (TicksRanThisFrame > 0)
@@ -91,5 +118,14 @@ public partial class SimulationBridge : Node
         }
         EventsThisFrame = drained.ToImmutable();
     }
-}
 
+    // ---- Read-only queries for the observer UI (never mutate, never grant NPC knowledge) ----
+
+    public EntityDetails? Details(long id) => simulation.ReadEntityDetails(World, new EntityId(id));
+
+    public EntityMindView? Mind(long id) => simulation.ReadEntityMind(World, new EntityId(id));
+
+    public HistoryPage History(long after, int limit) => simulation.ReadHistory(after, limit);
+
+    public string SpeciesName(int key) => Species.TryGetValue(key, out var d) ? d.Name : $"Species {key}";
+}

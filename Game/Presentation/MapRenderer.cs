@@ -12,6 +12,19 @@ public partial class MapRenderer : Node2D
     [Export] public NodePath BridgePath = "../SimulationBridge";
     [Export] public float CellSize = 16f;
     [Export] public Color PlaceholderColor = new(0.9f, 0.85f, 0.2f);
+    [Export] public NodePath ObserverPath = "../Observer";
+
+    private ObserverController? observer;
+
+    // Placeholder colours per species until sprite atlases replace them.
+    private static Color SpeciesColor(int key) => key switch
+    {
+        SpeciesCatalog.Deer => new Color("b07a45"),
+        SpeciesCatalog.Sheep => new Color("f2f0e6"),
+        SpeciesCatalog.Rabbit => new Color("d9c38c"),
+        SpeciesCatalog.Wolf => new Color("3d3f45"),
+        _ => new Color(0.9f, 0.85f, 0.2f),
+    };
 
     private SimulationBridge bridge = null!;
 
@@ -21,6 +34,7 @@ public partial class MapRenderer : Node2D
     public override void _Ready()
     {
         bridge = GetNode<SimulationBridge>(BridgePath);
+        observer = GetNodeOrNull<ObserverController>(ObserverPath);
         var map = bridge.Map;
         using var image = Image.CreateEmpty(map.Width, map.Height, false, Image.Format.Rgb8);
         for (int y = 0; y < map.Height; y++)
@@ -36,12 +50,16 @@ public partial class MapRenderer : Node2D
                 });
         terrain = ImageTexture.CreateFromImage(image);
         TextureFilter = TextureFilterEnum.Nearest;
-        GetViewport().GetCamera2D()!.Position = new Vector2(map.Width, map.Height) * CellSize / 2;
+        var camera = GetViewport().GetCamera2D()!;
+        camera.Position = new Vector2(map.Width, map.Height) * CellSize / 2;
+        var view = GetViewport().GetVisibleRect().Size;
+        float fit = Mathf.Min(view.X / (map.Width * CellSize), view.Y / (map.Height * CellSize));
+        camera.Zoom = Vector2.One * Mathf.Clamp(fit, 0.25f, 4f); // start with the whole map in view
     }
 
     public override void _Process(double delta)
     {
-        if (lastDrawn != bridge.Snapshot) QueueRedraw();
+        if (!ReferenceEquals(lastDrawn, bridge.Snapshot) || observer is not null) QueueRedraw(); // selection outline follows input
     }
 
     public override void _Draw()
@@ -56,8 +74,11 @@ public partial class MapRenderer : Node2D
         {
             foreach (EntityRow row in chunk)
             {
-                var position = new Vector2(row.X, row.Y) * CellSize;
-                DrawRect(new Rect2(position, size), PlaceholderColor);
+                var position = new Vector2(row.X, row.Y) * CellSize + new Vector2(CellSize, CellSize) * 0.1f;
+                var color = row.LifeState == LifeStates.Dead ? new Color(0.45f, 0.45f, 0.45f) : SpeciesColor(row.VisualKey);
+                DrawRect(new Rect2(position, size), color);
+                if (observer is not null && row.Id.Value == observer.SelectedId)
+                    DrawRect(new Rect2(position - Vector2.One * 2, size + Vector2.One * 4), new Color(1f, 0.15f, 0.15f), false, 2f);
             }
         }
     }

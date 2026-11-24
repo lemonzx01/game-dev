@@ -1,14 +1,18 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://Integration/SimulationBridge.cs" id="1_bridge"]
 [ext_resource type="Script" path="res://Presentation/CameraController.cs" id="2_camera"]
 [ext_resource type="Script" path="res://Presentation/MapRenderer.cs" id="3_map"]
 [ext_resource type="Script" path="res://Presentation/DebugHud.cs" id="4_hud"]
+[ext_resource type="Script" path="res://Presentation/ObserverController.cs" id="5_observer"]
+[ext_resource type="Script" path="res://Presentation/InspectorPanel.cs" id="6_inspector"]
+[ext_resource type="Script" path="res://Presentation/EventFeed.cs" id="7_feed"]
 
 [node name="Main" type="Node2D"]
 
 [node name="SimulationBridge" type="Node" parent="."]
 script = ExtResource("1_bridge")
+StarterAnimals = 120
 
 [node name="Camera2D" type="Camera2D" parent="."]
 script = ExtResource("2_camera")
@@ -18,12 +22,35 @@ enabled = true
 script = ExtResource("3_map")
 BridgePath = NodePath("../SimulationBridge")
 
+[node name="Observer" type="Node2D" parent="."]
+script = ExtResource("5_observer")
+
 [node name="UI" type="CanvasLayer" parent="."]
 
 [node name="DebugLabel" type="Label" parent="UI"]
 offset_left = 12.0
 offset_top = 12.0
-offset_right = 700.0
+offset_right = 900.0
 offset_bottom = 40.0
 script = ExtResource("4_hud")
 BridgePath = NodePath("../../SimulationBridge")
+
+[node name="Inspector" type="Label" parent="UI"]
+offset_left = 12.0
+offset_top = 44.0
+offset_right = 620.0
+offset_bottom = 260.0
+script = ExtResource("6_inspector")
+
+[node name="Feed" type="Label" parent="UI"]
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -460.0
+offset_top = -250.0
+offset_right = -12.0
+offset_bottom = -12.0
+vertical_alignment = 2
+script = ExtResource("7_feed")
