@@ -170,6 +170,9 @@ public sealed partial class SimulationWorld : ISimulation
                 : t.Amount < 1 ? CommandReason.InvalidAmount : CommandReason.None,
             SetTerrainCommand g => !InBounds(g.X, g.Y) ? CommandReason.OutOfBounds
                 : !Enum.IsDefined(g.Terrain) ? CommandReason.InvalidCommand : CommandReason.None,
+            FoundSettlementCommand f => !InBounds(f.X, f.Y) ? CommandReason.OutOfBounds
+                : f.Faction is not (Faction.Human or Faction.Demon) || string.IsNullOrWhiteSpace(f.Name) || f.Name.Length > 32
+                    ? CommandReason.InvalidCommand : CommandReason.None,
             _ => CommandReason.InvalidCommand,
         };
     }
@@ -214,6 +217,10 @@ public sealed partial class SimulationWorld : ISimulation
                 case SetTerrainCommand g:
                     reason = ApplyTerrain(g);
                     break;
+                case FoundSettlementCommand f:
+                    reason = Found(f, now);
+                    if (reason == CommandReason.None) created = settlements.Count;
+                    break;
                 default:
                     reason = CommandReason.InvalidCommand;
                     break;
@@ -224,6 +231,7 @@ public sealed partial class SimulationWorld : ISimulation
             SpawnEntityCommand s => (s.X, s.Y),
             TakeResourceCommand t => (t.X, t.Y),
             SetTerrainCommand g => (g.X, g.Y),
+            FoundSettlementCommand f => (f.X, f.Y),
             _ => (-1, -1),
         };
         Emit(new WorldEvent(0, now, reason == CommandReason.None ? EventKinds.CommandApplied : EventKinds.CommandRejected,
@@ -292,6 +300,9 @@ public sealed partial class SimulationWorld : ISimulation
                 break;
             case WorkKind.Birth:
                 RunBirth(item, now);
+                break;
+            case WorkKind.CropGrow:
+                RunCropGrow(item, now);
                 break;
             case WorkKind.CarcassDecay:
                 RunDecay(item, now);
@@ -400,6 +411,7 @@ public sealed partial class SimulationWorld : ISimulation
         options.Mind.WriteCanonical(writer);
         SpeciesCatalog.WriteCanonical(writer, options.Species);
         options.Climate.WriteCanonical(writer);
+        options.Settlements.WriteCanonical(writer);
         var psy = options.Psyche;
         foreach (int v in new[] { psy.MemoryCap, psy.RelationshipCap, psy.FearDecayPerTick, psy.TraitJitter, psy.DangerMemoryTicks, psy.DangerAvoidRadius, psy.FearBlocksMatingAbove })
             writer.Write(v);
@@ -436,6 +448,7 @@ public sealed partial class SimulationWorld : ISimulation
         WritePathQueue(writer);
         WriteEcology(writer);
         WriteLife(writer);
+        WriteSettlements(writer);
         writer.Write(nextMemoryId);
         // 5. RNG streams, retained events, durable milestones.
         writer.Write((uint)streamTags.Length);
@@ -469,6 +482,12 @@ public sealed partial class SimulationWorld : ISimulation
                 break;
             case SetTerrainCommand g:
                 writer.Write(g.X); writer.Write(g.Y); writer.Write((byte)g.Terrain);
+                break;
+            case FoundSettlementCommand f:
+                writer.Write(f.X); writer.Write(f.Y); writer.Write((int)f.Faction);
+                byte[] townName = Encoding.UTF8.GetBytes(f.Name);
+                writer.Write((uint)townName.Length);
+                writer.Write(townName);
                 break;
             default:
                 throw new InvalidOperationException("Unknown command in queue.");

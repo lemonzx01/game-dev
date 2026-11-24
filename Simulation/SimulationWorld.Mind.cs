@@ -21,6 +21,7 @@ internal struct MindState
     public long HuntUntil;        // give up the current hunt at this tick
     public long NoHuntUntil;      // cooldown after a failed hunt
     public long AttackReadyTick;  // next tick an attack may land
+    public long NoWorkUntil;      // cooldown after an unreachable work target
 }
 
 public sealed partial class SimulationWorld
@@ -102,12 +103,17 @@ public sealed partial class SimulationWorld
     }
 
     // Goal test for an Eat path: plants for herbivores, carcass meat for carnivores, either for omnivores.
-    private bool CanEatAt(EntityState e, int cell) => DietOf(e) switch
+    // Settlement members may also eat at their town centre while its storage holds food (T015).
+    private bool CanEatAt(EntityState e, int cell)
     {
-        Diet.Herbivore => CanConsumeAt(cell, ResourceKind.Food),
-        Diet.Carnivore => CanConsumeAt(cell, ResourceKind.Meat),
-        _ => CanConsumeAt(cell, ResourceKind.Food) || CanConsumeAt(cell, ResourceKind.Meat),
-    };
+        if (SettlementOf(e) is { Food: > 0 } town && cell == Cell(town.X, town.Y)) return true;
+        return DietOf(e) switch
+        {
+            Diet.Herbivore => CanConsumeAt(cell, ResourceKind.Food),
+            Diet.Carnivore => CanConsumeAt(cell, ResourceKind.Meat),
+            _ => CanConsumeAt(cell, ResourceKind.Food) || CanConsumeAt(cell, ResourceKind.Meat),
+        };
+    }
 
     // Food: a stocked node on the tile. Water: a stocked water node on a 4-neighbour (water tiles are impassable).
     // Meat: a carcass on the tile or a 4-neighbour.
@@ -158,7 +164,7 @@ public sealed partial class SimulationWorld
 
         var v = e.Vitals.At(now, options.Vitals);
         long fatigue = FatigueAt(e.Mind, now);
-        Span<(int Score, ActionKind Kind)> candidates = stackalloc (int, ActionKind)[7];
+        Span<(int Score, ActionKind Kind)> candidates = stackalloc (int, ActionKind)[8];
         int n = 0;
         if (threat is not null)
             candidates[n++] = (FleeScore(e, distance, now), ActionKind.Flee); // personality and fear decide how close is too close
@@ -174,6 +180,9 @@ public sealed partial class SimulationWorld
             candidates[n++] = (250 + e.Psyche.Sociability / 4, ActionKind.Mate);
         if (threat is null && (fatigue >= cfg.RestStartFatigue || current == ActionKind.Rest))
             candidates[n++] = ((int)(fatigue * 9 / 10_000), ActionKind.Rest);
+        // Settlement work when nothing urgent: what the town needs (deliver, harvest, gather food or wood).
+        if (threat is null && e.SettlementId != 0 && (current == ActionKind.Work || PlanWork(e) != WorkGoal.None))
+            candidates[n++] = (TownCfg.WorkScore, ActionKind.Work);
         candidates[n++] = (50, ActionKind.Wander);
         for (int i = 0; i < n; i++)
             if (candidates[i].Kind == current) candidates[i].Score += cfg.InertiaBonus;
@@ -214,6 +223,11 @@ public sealed partial class SimulationWorld
                 if (MateFor(e, now) is not { } mate) return false;
                 huntTarget = mate.Id.Value;
                 break;
+            case ActionKind.Work:
+                if (OnCooldown(e.Mind, kind, now) || PlanWork(e) is not (var goal and not WorkGoal.None)) return false;
+                e.WorkGoal = goal;
+                e.Job = JobFor(goal, e.Job);
+                break;
             case ActionKind.Wander:
                 wanderCell = WanderStep(e);
                 if (wanderCell < 0) return false;
@@ -240,7 +254,7 @@ public sealed partial class SimulationWorld
             long ticks = Math.Max(1, (fatigue - MindCfg.RestEndFatigue + MindCfg.RestRecoveryPerTick - 1) / MindCfg.RestRecoveryPerTick);
             ScheduleStep(e, now + ticks);
         }
-        else if (kind is ActionKind.Eat or ActionKind.Drink)
+        else if (kind is ActionKind.Eat or ActionKind.Drink or ActionKind.Work)
         {
             RequestPath(e, kind); // searched later within the per-tick path budget
         }
@@ -295,6 +309,7 @@ public sealed partial class SimulationWorld
                 return;
             case ActionKind.Eat:
             case ActionKind.Drink:
+            case ActionKind.Work:
             case ActionKind.Wander:
                 var path = e.Mind.Path!;
                 if (e.Mind.PathIndex < path.Length)
@@ -309,6 +324,8 @@ public sealed partial class SimulationWorld
                     StartIdle(e, now); // the regular think cadence continues; no early re-think
                     return;
                 }
+                if (e.Mind.Kind == ActionKind.Work) { DoWork(e, now); FinishAction(e, now); return; }
+                if (e.Mind.Kind == ActionKind.Eat && EatFromStorage(e, now)) { FinishAction(e, now); return; }
                 if (e.Mind.Kind == ActionKind.Drink) TryConsume(e.Id, ResourceKind.Water, now);
                 else if (DietOf(e) == Diet.Carnivore || TryConsume(e.Id, ResourceKind.Food, now) != CommandReason.None)
                     TryConsume(e.Id, ResourceKind.Meat, now); // omnivores fall back to meat
@@ -386,6 +403,7 @@ public sealed partial class SimulationWorld
         w.Write(m.HuntUntil);
         w.Write(m.NoHuntUntil);
         w.Write(m.AttackReadyTick);
+        w.Write(m.NoWorkUntil);
     }
 
     internal int LastDiscretionaryRun { get; private set; }

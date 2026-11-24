@@ -18,7 +18,7 @@ public sealed partial class SimulationWorld
 {
     private static readonly byte[] Magic = "FWSSAVE\0"u8.ToArray();
     public const uint SaveFormatVersion = 1;
-    public const uint StateSchema = 9;
+    public const uint StateSchema = 10;
     private static readonly JsonSerializerOptions OptionsJson = new() { WriteIndented = false };
 
     // ---- Save ----------------------------------------------------------------------------------
@@ -107,6 +107,8 @@ public sealed partial class SimulationWorld
 
         w.Write(carcasses.Count);
         foreach (var (_, c) in carcasses) { w.Write(c.Cell); w.Write(c.Meat); w.Write(c.DecayTick); w.Write(c.Token); }
+
+        WriteSettlements(w);
     }
 
     private static void WriteEvent(BinaryWriter w, in WorldEvent e)
@@ -143,6 +145,7 @@ public sealed partial class SimulationWorld
         }
         w.Write(p.Relationships.Count);
         foreach (var rel in p.Relationships) { w.Write(rel.Other); w.Write(rel.Affinity); w.Write(rel.Familiarity); w.Write(rel.LastTick); }
+        w.Write(m.NoWorkUntil); w.Write(e.SettlementId); w.Write((int)e.Job); w.Write((int)e.WorkGoal); w.Write((byte)e.CarryKind); w.Write(e.CarryAmount);
     }
 
     // ---- Load ----------------------------------------------------------------------------------
@@ -322,6 +325,9 @@ public sealed partial class SimulationWorld
             Require(c.Cell >= 0 && c.Cell < terrain.Length && c.Meat > 0 && c.Token < nextCarcassToken, "Carcass invalid.");
             carcasses.Add(c.Cell, c);
         }
+        ReadSettlements(r, Count);
+        foreach (var e in entities)
+            Require(e.SettlementId <= settlements.Count, "Member of an unknown settlement.");
         snapshot = null;
     }
 
@@ -361,7 +367,20 @@ public sealed partial class SimulationWorld
         int relationCount = Count(r, PsyCfg.RelationshipCap);
         for (int i = 0; i < relationCount; i++)
             p.Relationships.Add(new Relationship(r.ReadInt64(), r.ReadInt32(), r.ReadInt32(), r.ReadInt64()));
+        e.Mind.NoWorkUntil = r.ReadInt64();
+        e.SettlementId = r.ReadInt32(); e.Job = (Job)r.ReadInt32(); e.WorkGoal = (WorkGoal)r.ReadInt32();
+        e.CarryKind = (ResourceKind)r.ReadByte(); e.CarryAmount = r.ReadInt32();
+        Require(e.CarryAmount >= 0 && e.SettlementId >= 0, "Carried amount or settlement invalid.");
         return e;
+    }
+
+    private static FoundSettlementCommand ReadFound(BinaryReader r, WorldId world, long issuer, string mode)
+    {
+        int x = r.ReadInt32(), y = r.ReadInt32();
+        var faction = (Faction)r.ReadInt32();
+        int length = (int)r.ReadUInt32();
+        Require(length is >= 1 and <= 128, "Settlement name length invalid.");
+        return new FoundSettlementCommand(world, issuer, mode, x, y, faction, Encoding.UTF8.GetString(r.ReadBytes(length)));
     }
 
     private static GameCommand ReadCommand(BinaryReader r)
@@ -377,6 +396,7 @@ public sealed partial class SimulationWorld
             CommandKind.SpawnEntity => new SpawnEntityCommand(world, issuer, mode, r.ReadInt32(), r.ReadInt32(), r.ReadInt32(), (Sex)r.ReadInt32()),
             CommandKind.TakeResource => new TakeResourceCommand(world, issuer, mode, r.ReadInt32(), r.ReadInt32(), (ResourceKind)r.ReadByte(), r.ReadInt32()),
             CommandKind.SetTerrain => new SetTerrainCommand(world, issuer, mode, r.ReadInt32(), r.ReadInt32(), (Terrain)r.ReadByte()),
+            CommandKind.FoundSettlement => ReadFound(r, world, issuer, mode),
             _ => throw new InvalidDataException($"Unknown command kind {kind}."),
         };
     }

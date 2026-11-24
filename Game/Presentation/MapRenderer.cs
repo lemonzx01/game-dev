@@ -23,6 +23,8 @@ public partial class MapRenderer : Node2D
         SpeciesCatalog.Sheep => new Color("f2f0e6"),
         SpeciesCatalog.Rabbit => new Color("d9c38c"),
         SpeciesCatalog.Wolf => new Color("3d3f45"),
+        SpeciesCatalog.Human => new Color("f0c8a0"),
+        SpeciesCatalog.Demon => new Color("c0304a"),
         _ => new Color(0.9f, 0.85f, 0.2f),
     };
 
@@ -71,6 +73,24 @@ public partial class MapRenderer : Node2D
 
     public int BuiltRevision => builtRevision;
 
+    // T015: farm plots tinted by crop, the town centre (storage) outlined in faction colour, and the town name.
+    private void DrawSettlements()
+    {
+        var font = ThemeDB.FallbackFont;
+        foreach (var town in bridge.Settlements())
+        {
+            var faction = town.Faction == Faction.Human ? new Color("4a7fd0") : new Color("d04a4a");
+            foreach (var (x, y, crop) in bridge.FarmPlots(town.Id))
+                DrawRect(new Rect2(new Vector2(x, y) * CellSize, Vector2.One * CellSize),
+                    new Color(0.55f, 0.45f, 0.2f).Lerp(new Color(0.85f, 0.8f, 0.25f), crop / 10f));
+            // Keep labels and outlines readable at any zoom (world-space drawing scales with the camera).
+            float scale = 1f / Mathf.Max(0.05f, GetViewport().GetCamera2D()?.Zoom.X ?? 1f);
+            var centre = new Vector2(town.X, town.Y) * CellSize;
+            DrawRect(new Rect2(centre - Vector2.One * 3 * scale, Vector2.One * CellSize + Vector2.One * 6 * scale), faction, false, 3f * scale);
+            DrawString(font, centre + new Vector2(-CellSize, -8 * scale), $"{town.Name} ({town.Population})", HorizontalAlignment.Left, -1, (int)(14 * scale), faction);
+        }
+    }
+
     public override void _Process(double delta)
     {
         if (builtRevision != bridge.MapRevision) BuildTerrain();
@@ -85,6 +105,7 @@ public partial class MapRenderer : Node2D
         lastDrawn = snapshot;
         DrawTextureRect(terrain, new Rect2(Vector2.Zero, terrain.GetSize() * CellSize), false);
         var size = new Vector2(CellSize, CellSize) * 0.8f;
+        DrawSettlements();
         foreach (var chunk in snapshot.Chunks)
         {
             foreach (EntityRow row in chunk)

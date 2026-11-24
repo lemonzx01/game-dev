@@ -21,6 +21,8 @@ public partial class SimulationBridge : Node
     [Export] public ulong Seed = 1;
     // Opening population placed through ordinary God commands (0 = one test entity, as in T007).
     [Export] public int StarterAnimals = 0;
+    // Settlers per starter town (human west, demon east); used only when StarterAnimals > 0.
+    [Export] public int StarterSettlers = 10;
 
     private static readonly WorldId World = new(1);
     private const long ScenarioAuthor = 1;
@@ -57,7 +59,11 @@ public partial class SimulationBridge : Node
         });
         Map = simulation.ReadMap();
         if (StarterAnimals <= 0) SpawnOneNearCenter();
-        else SpawnStarterPopulation(StarterAnimals);
+        else
+        {
+            if (StarterSettlers > 0) FoundStarterTowns(StarterSettlers);
+            SpawnStarterPopulation(StarterAnimals);
+        }
         PreviousSnapshot = Snapshot = simulation.ReadSnapshot();
     }
 
@@ -75,6 +81,43 @@ public partial class SimulationBridge : Node
     }
 
     // Mixed herd spread over land in a fixed pattern (deterministic for a given seed); arrives on tick 1.
+    // T015 opening: a human town in the west and a demon town in the east, each with ten settlers, founded through
+    // ordinary God commands in the same tick (founding runs first, so the settlers join on arrival).
+    private void FoundStarterTowns(int settlersEach)
+    {
+        var sites = new[] { (Faction.Human, "Ashford", Map.Width / 4), (Faction.Demon, "Cinderhold", Map.Width * 3 / 4) };
+        foreach (var (faction, name, column) in sites)
+        {
+            if (FindTownSite(column) is not { } site) continue;
+            simulation.SubmitCommand(new FoundSettlementCommand(World, ScenarioAuthor, CommandModes.God, site.X, site.Y, faction, name));
+            int species = faction == Faction.Human ? SpeciesCatalog.Human : SpeciesCatalog.Demon;
+            for (int k = 0; k < settlersEach; k++)
+            {
+                int x = site.X - 2 + k % 5, y = site.Y + 1 + k / 5;
+                if (x < 0 || y >= Map.Height || Map.At(x, y) is Terrain.Water or Terrain.Mountain) { x = site.X; y = site.Y; }
+                simulation.SubmitCommand(new SpawnEntityCommand(World, ScenarioAuthor, CommandModes.God, x, y, species, k % 2 == 0 ? Sex.Female : Sex.Male));
+            }
+        }
+    }
+
+    // First grass tile, scanning outward from the map's middle row in the given column, with grass around it.
+    private (int X, int Y)? FindTownSite(int column)
+    {
+        for (int d = 0; d < Map.Height / 2; d++)
+            foreach (int y in new[] { Map.Height / 2 - d, Map.Height / 2 + d })
+                for (int dx = -6; dx <= 6; dx++)
+                {
+                    int x = column + dx;
+                    if (x < 3 || y < 3 || x >= Map.Width - 3 || y >= Map.Height - 4) continue;
+                    int grass = 0;
+                    for (int oy = -2; oy <= 2; oy++)
+                        for (int ox = -2; ox <= 2; ox++)
+                            if (Map.At(x + ox, y + oy) == Terrain.Grass) grass++;
+                    if (Map.At(x, y) == Terrain.Grass && grass >= 18) return (x, y);
+                }
+        return null;
+    }
+
     private void SpawnStarterPopulation(int count)
     {
         int[] mix = [SpeciesCatalog.Deer, SpeciesCatalog.Rabbit, SpeciesCatalog.Sheep, SpeciesCatalog.Rabbit, SpeciesCatalog.Deer, SpeciesCatalog.Rabbit, SpeciesCatalog.Sheep, SpeciesCatalog.Wolf];
@@ -128,6 +171,9 @@ public partial class SimulationBridge : Node
 
     public CommandReceipt SpawnAt(int x, int y, int species) =>
         Submit(new SpawnEntityCommand(World, ScenarioAuthor, CommandModes.God, x, y, species));
+
+    public CommandReceipt FoundAt(int x, int y, Faction faction, string name) =>
+        Submit(new FoundSettlementCommand(World, ScenarioAuthor, CommandModes.God, x, y, faction, name));
 
     public CommandReceipt PaintTerrain(int x, int y, Terrain terrain) =>
         Submit(new SetTerrainCommand(World, ScenarioAuthor, CommandModes.God, x, y, terrain));
@@ -195,6 +241,10 @@ public partial class SimulationBridge : Node
     public EntityMindView? Mind(long id) => simulation.ReadEntityMind(World, new EntityId(id));
 
     public HistoryPage History(long after, int limit) => simulation.ReadHistory(after, limit);
+
+    public System.Collections.Generic.IReadOnlyList<SettlementView> Settlements() => simulation.ReadSettlements();
+
+    public System.Collections.Generic.IReadOnlyList<(int X, int Y, int Crop)> FarmPlots(int id) => simulation.ReadFarmPlots(id);
 
     public string SpeciesName(int key) => Species.TryGetValue(key, out var d) ? d.Name : $"Species {key}";
 }

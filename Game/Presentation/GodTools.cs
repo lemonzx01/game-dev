@@ -10,14 +10,15 @@ namespace Game.Presentation;
 // Every action is an ordinary validated God command (or a save/load between frames), never a direct world edit.
 public partial class GodTools : Node2D
 {
-    public enum Tool { Spawn, Terrain }
+    public enum Tool { Spawn, Terrain, Settlement }
 
     [Export] public NodePath BridgePath = "../SimulationBridge";
     [Export] public NodePath FeedPath = "../UI/Feed";
     [Export] public NodePath LabelPath = "../UI/GodLabel";
     [Export] public float CellSize = 16f;
 
-    private static readonly int[] SpeciesCycle = [SpeciesCatalog.Deer, SpeciesCatalog.Sheep, SpeciesCatalog.Rabbit, SpeciesCatalog.Wolf];
+    private static readonly int[] SpeciesCycle = [SpeciesCatalog.Deer, SpeciesCatalog.Sheep, SpeciesCatalog.Rabbit, SpeciesCatalog.Wolf, SpeciesCatalog.Human, SpeciesCatalog.Demon];
+    private static readonly Faction[] FactionCycle = [Faction.Human, Faction.Demon];
     private static readonly Terrain[] TerrainCycle = [Terrain.Grass, Terrain.Forest, Terrain.Water, Terrain.Mountain, Terrain.Snow];
 
     private SimulationBridge bridge = null!;
@@ -28,6 +29,8 @@ public partial class GodTools : Node2D
     public Tool Current { get; private set; } = Tool.Spawn;
     public int SpeciesIndex { get; private set; }
     public int TerrainIndex { get; private set; } = 2; // water: an obvious first brush
+    public int FactionIndex { get; private set; }
+    private int townsFounded;
     public string? SavePathOverride { get; set; }      // tests use a temp file; the game uses user://saves
 
     public override void _Ready()
@@ -45,18 +48,25 @@ public partial class GodTools : Node2D
     public void CycleOption()
     {
         if (Current == Tool.Spawn) SpeciesIndex = (SpeciesIndex + 1) % SpeciesCycle.Length;
-        else TerrainIndex = (TerrainIndex + 1) % TerrainCycle.Length;
+        else if (Current == Tool.Terrain) TerrainIndex = (TerrainIndex + 1) % TerrainCycle.Length;
+        else FactionIndex = (FactionIndex + 1) % FactionCycle.Length;
         UpdateLabel();
     }
 
     public int CurrentSpecies => SpeciesCycle[SpeciesIndex];
     public Terrain CurrentTerrain => TerrainCycle[TerrainIndex];
+    public Faction CurrentFaction => FactionCycle[FactionIndex];
 
     /// <summary>Applies the current tool to a tile. Returns the receipt (Queued or Rejected at submission).</summary>
     public CommandReceipt? ApplyAt(int x, int y)
     {
         if (!Enabled) return null;
-        var receipt = Current == Tool.Spawn ? bridge.SpawnAt(x, y, CurrentSpecies) : bridge.PaintTerrain(x, y, CurrentTerrain);
+        var receipt = Current switch
+        {
+            Tool.Spawn => bridge.SpawnAt(x, y, CurrentSpecies),
+            Tool.Terrain => bridge.PaintTerrain(x, y, CurrentTerrain),
+            _ => bridge.FoundAt(x, y, CurrentFaction, $"{CurrentFaction} town {++townsFounded}"),
+        };
         if (receipt.Status != "Queued") feed?.Note($"God command refused: {receipt.Reason}");
         return receipt;
     }
@@ -94,9 +104,12 @@ public partial class GodTools : Node2D
         if (label is null) return;
         label.Text = !Enabled
             ? "G: God mode   F5: save   F9: load"
-            : Current == Tool.Spawn
-                ? $"GOD  spawn {bridge?.SpeciesName(CurrentSpecies)}  (right-click place, Tab species, W terrain brush)"
-                : $"GOD  terrain {CurrentTerrain}  (right-click paint, Tab terrain, Q spawn)";
+            : Current switch
+            {
+                Tool.Spawn => $"GOD  spawn {bridge?.SpeciesName(CurrentSpecies)}  (right-click place, Tab species, W terrain, E town)",
+                Tool.Terrain => $"GOD  terrain {CurrentTerrain}  (right-click paint, Tab terrain, Q spawn, E town)",
+                _ => $"GOD  found {CurrentFaction} town  (right-click found, Tab faction, Q spawn, W terrain)",
+            };
     }
 
     public override void _UnhandledInput(InputEvent @event)
@@ -111,6 +124,7 @@ public partial class GodTools : Node2D
                     case Key.F9: QuickLoad(); break;
                     case Key.Q when Enabled: Select(Tool.Spawn); break;
                     case Key.W when Enabled: Select(Tool.Terrain); break;
+                    case Key.E when Enabled: Select(Tool.Settlement); break;
                     case Key.Tab when Enabled: CycleOption(); break;
                     default: return;
                 }

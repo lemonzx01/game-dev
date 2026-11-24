@@ -16,7 +16,7 @@ public enum Diet { Herbivore = 1, Carnivore = 2, Omnivore = 3 }
 public sealed record SpeciesDef(int Key, string Name, Diet Diet, bool Domestic, int MoveTicksPerTile, int MeatYield,
     long AttackDamage, int LeashRadius, ImmutableArray<int> Fears, ImmutableArray<int> Hunts,
     long MaturityTicks = 0, long LifespanTicks = 0, int GestationTicks = 0, int ReproCooldownTicks = 0,
-    int LitterSize = 0, int LocalDensityCap = 0, long BirthHungerCost = 0);
+    int LitterSize = 0, int LocalDensityCap = 0, long BirthHungerCost = 0, Faction Faction = Faction.None);
 
 /// <summary>Carcass decay and hunting tuning (ticks). Defaults are provisional.</summary>
 public sealed record EcologyConfig(int CarcassDecayTicks, int AttackIntervalTicks, int HuntGiveUpTicks, int HuntCooldownTicks,
@@ -37,7 +37,7 @@ public sealed record EcologyConfig(int CarcassDecayTicks, int AttackIntervalTick
 
 public static class SpeciesCatalog
 {
-    public const int Deer = 1, Sheep = 2, Rabbit = 3, Wolf = 4;
+    public const int Deer = 1, Sheep = 2, Rabbit = 3, Wolf = 4, Human = 5, Demon = 6;
 
     /// <summary>Starter roster: wild herbivores (deer, rabbit), a farm animal (sheep) and a predator (wolf).</summary>
     private const long Day = 2400; // ticks at the default calendar
@@ -49,6 +49,9 @@ public static class SpeciesCatalog
         new SpeciesDef(Sheep, "Sheep", Diet.Herbivore, true, 2, 6, 0, 6, [Wolf], [], 6 * Day, 60 * Day, (int)(3 * Day), (int)(6 * Day), 1, 8, 200_000),
         new SpeciesDef(Rabbit, "Rabbit", Diet.Herbivore, false, 1, 2, 0, 0, [Wolf], [], 2 * Day, 20 * Day, (int)(1 * Day), (int)(2 * Day), 2, 8, 100_000),
         new SpeciesDef(Wolf, "Wolf", Diet.Carnivore, false, 1, 5, 400_000, 0, [], [Deer, Sheep, Rabbit], 8 * Day, 70 * Day, (int)(3 * Day), (int)(10 * Day), 2, 3, 250_000),
+        // Sapient peoples (T015): identical numbers on purpose; neither is good or evil by rule.
+        new SpeciesDef(Human, "Human", Diet.Omnivore, false, 2, 10, 0, 0, [Wolf], [], 16 * Day, 200 * Day, (int)(6 * Day), (int)(12 * Day), 1, 30, 250_000, Faction.Human),
+        new SpeciesDef(Demon, "Demon", Diet.Omnivore, false, 2, 10, 0, 0, [Wolf], [], 16 * Day, 200 * Day, (int)(6 * Day), (int)(12 * Day), 1, 30, 250_000, Faction.Demon),
     ]);
 
     public static ImmutableSortedDictionary<int, SpeciesDef> Build(IEnumerable<SpeciesDef> defs)
@@ -71,6 +74,7 @@ public static class SpeciesCatalog
             if (key != d.Key || key < 1) throw new ArgumentException($"Species key {key} invalid.");
             if (string.IsNullOrWhiteSpace(d.Name)) throw new ArgumentException($"Species {key} needs a name.");
             if (!Enum.IsDefined(d.Diet)) throw new ArgumentException($"Species {key} diet invalid.");
+            if (!Enum.IsDefined(d.Faction)) throw new ArgumentException($"Species {key} faction invalid.");
             ArgumentOutOfRangeException.ThrowIfLessThan(d.MoveTicksPerTile, 1);
             ArgumentOutOfRangeException.ThrowIfNegative(d.MeatYield);
             ArgumentOutOfRangeException.ThrowIfNegative(d.AttackDamage);
@@ -122,6 +126,7 @@ public static class SpeciesCatalog
             w.Write(d.LitterSize);
             w.Write(d.LocalDensityCap);
             w.Write(d.BirthHungerCost);
+            w.Write((int)d.Faction);
             foreach (var list in new[] { d.Fears, d.Hunts })
             {
                 var sorted = list.Sort();

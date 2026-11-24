@@ -15,6 +15,11 @@ internal sealed class EntityState
     public long PregnancyFather;
     public long ReproReadyTick;
     public readonly Psyche Psyche = new();
+    public int SettlementId;          // 0 = none
+    public Job Job;
+    public WorkGoal WorkGoal;
+    public ResourceKind CarryKind;
+    public int CarryAmount;
     public long BirthTick;
     public VitalsAnchor Vitals;
     public long ScheduledDeathTick = long.MaxValue; // only the item due at this tick is live; older items are stale
@@ -49,6 +54,7 @@ public sealed partial class SimulationWorld
             Vitals = new VitalsAnchor(now, 0, 0, VitalsConfig.MaxHealth),
         };
         entities.Add(entity); // IDs are monotonic, so the list stays sorted by ID
+        JoinSettlement(entity);
         grid.Add(id.Value, x, y);
         ScheduleDeath(entity);
         InitLife(entity, now, sex);
@@ -86,6 +92,7 @@ public sealed partial class SimulationWorld
         var v = e.Vitals.At(now, options.Vitals);
         e.LifeState = LifeStates.Dead;
         StartIdle(e, now);  // actions invalidated immediately (pending step superseded)
+        DropCarry(e, now);
         e.Mind.ThinkToken++; // pending think superseded
         grid.Remove(e.Id.Value, e.X, e.Y);
         e.DeathTick = now;
@@ -173,7 +180,7 @@ public sealed partial class SimulationWorld
                 var v = e.Vitals.At(tick, options.Vitals);
                 return new EntityDetails(worldId, entityId, tick, e.LifeState, e.Species, e.X, e.Y, e.BirthTick,
                     v.Hunger, v.Thirst, v.Health, null, DeathCause.None, e.Sex, e.MotherId, e.FatherId,
-                    tick - e.BirthTick, StageOf(e, tick), e.PregnantUntil);
+                    tick - e.BirthTick, StageOf(e, tick), e.PregnantUntil, e.SettlementId, e.Job, e.CarryKind, e.CarryAmount);
             }
         }
         if (deathIndex.TryGetValue(entityId.Value, out int d))
@@ -231,6 +238,11 @@ public sealed partial class SimulationWorld
             writer.Write(e.PregnancyFather);
             writer.Write(e.ReproReadyTick);
             WritePsyche(writer, e.Psyche);
+            writer.Write(e.SettlementId);
+            writer.Write((int)e.Job);
+            writer.Write((int)e.WorkGoal);
+            writer.Write((byte)e.CarryKind);
+            writer.Write(e.CarryAmount);
         }
         writer.Write((uint)deaths.Count);
         foreach (var r in deaths)
