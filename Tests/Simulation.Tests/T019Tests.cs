@@ -207,7 +207,11 @@ internal static class T019Tests
         long wolf = Spawn(world, 25, 6, Wolf, ref cursor);
         world.SetTamedForTest(wolf, 1);
         long sheep = Spawn(world, 24, 8, Sheep, ref cursor);
-        long rabbit = Spawn(world, 30, 3, Rabbit, ref cursor);
+        // Keep wild rabbit inside the north-east town boundary corner (rocks at (31,1) and (30,2))
+        // so it cannot bolt beyond town radius 10 where the leashed wolf cannot follow (FIX-R2 #8).
+        world.SubmitCommand(new SetTerrainCommand(W, God, CommandModes.God, 31, 1, Terrain.Mountain));
+        world.SubmitCommand(new SetTerrainCommand(W, God, CommandModes.God, 30, 2, Terrain.Mountain));
+        long rabbit = Spawn(world, 29, 1, Rabbit, ref cursor);
         long deer = Spawn(world, 27, 9, Deer, ref cursor);
         var events = Run(world, 1200, ref cursor);
         Check(!events.Any(e => e.Kind == EventKinds.GuardAlert && e.Target == wolf), "the guard does not treat the town's wolf as a threat");

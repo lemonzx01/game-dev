@@ -18,6 +18,7 @@ internal static class FixR2Tests
         ("FIX-R2 #5 heal charges exact mana and fatigue and leaves ineligible casts unchanged", HealChargesExactFatigueAndSkipsIneligible),
         ("FIX-R2 #6 damage multipliers use wide arithmetic without wrapping and stay monotonic", DamageMultipliersNoOverflowAndMonotonic),
         ("FIX-R2 #7 near-limit mana and trust saturate safely without negative wrap across save/load", ManaAndTrustNearLimitSaturateSafely),
+        ("FIX-R2 #8 tamed animals stay within town radius on chase/flee/eat/wander and return home when outside", TamedAnimalStaysLeashedOnEveryPathAndReturnsHome),
     ];
 
     private static void Check(bool ok, string message)
@@ -782,5 +783,128 @@ internal static class FixR2Tests
         Check(loaded.StateHash() == world.StateHash(), "near-limit save/load hash mismatch");
         Check(loaded.ReadAdventure(W, new EntityId(caster))!.Mana == advCaster.MaxMana, "loaded caster mana mismatch");
         Check(loaded.ReadAdventure(W, new EntityId(deer))!.Trust == int.MaxValue, "loaded deer trust mismatch");
+    }
+
+    // ---- Finding 8 ------------------------------------------------------------------------------
+
+    private static void TamedAnimalStaysLeashedOnEveryPathAndReturnsHome()
+    {
+        const int radius = 6;
+
+        // 1. Boundary chase: hungry tamed wolf at East edge (21,10) with rabbit outside at (24,10) must never step outside radius 6.
+        {
+            var world = FlatWorld(
+                width: 40, height: 22, seed: 801,
+                vitals: new VitalsConfig(30_000, 0, 0, 0, 0, 250_000, 100_000, 4),
+                settlements: SettlementConfig.Default with { FarmPlots = 0, Radius = radius });
+            world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 15, 10, Faction.Human, "Keep"));
+            world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 15, 10, Human));
+            world.Step();
+            long cursor = world.ReadEvents(0, 1).LatestSequence;
+
+            long wolf = Spawn(world, 21, 10, Wolf, ref cursor);
+            world.SetTamedForTest(wolf, 1);
+            // Keep rabbit penned at (24,10)..(25,10) or just open enough for wolf to want to chase East:
+            long rabbit = Spawn(world, 23, 10, Rabbit, ref cursor);
+
+            var events = new List<WorldEvent>();
+            for (int t = 0; t < 80; t++)
+            {
+                events.AddRange(Run(world, 1, ref cursor));
+                var (wx, wy) = world.PositionOf(wolf);
+                int dist = Math.Max(Math.Abs(wx - 15), Math.Abs(wy - 10));
+                Check(dist <= radius, $"tamed wolf left town radius during chase: pos=({wx},{wy}), dist={dist} > {radius}");
+            }
+            Check(!events.Any(e => e.Kind == EventKinds.Attacked && e.Actor == wolf && e.Target == rabbit),
+                "tamed wolf attacked outside rabbit after leaving boundary");
+        }
+
+        // 2. Boundary flee: tamed deer at East edge (21,10) with inward threat (wolf at 19,10) must flee along/inside radius, never out.
+        {
+            var world = FlatWorld(
+                width: 40, height: 22, seed: 802,
+                settlements: SettlementConfig.Default with { FarmPlots = 0, Radius = radius });
+            world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 15, 10, Faction.Human, "Keep"));
+            world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 15, 10, Human));
+            world.Step();
+            long cursor = world.ReadEvents(0, 1).LatestSequence;
+
+            long deer = Spawn(world, 21, 10, Deer, ref cursor);
+            world.SetTamedForTest(deer, 1);
+            Spawn(world, 19, 10, Wolf, ref cursor); // wild inward threat within PerceptionRadius 8 (note: keep Guard off-range if wolf far from (15,10), or wolf scares deer immediately)
+
+            for (int t = 0; t < 60; t++)
+            {
+                Run(world, 1, ref cursor);
+                if (world.ReadEntityDetails(W, new EntityId(deer))!.LifeState != LifeStates.Alive) break;
+                var (dx, dy) = world.PositionOf(deer);
+                int dist = Math.Max(Math.Abs(dx - 15), Math.Abs(dy - 10));
+                Check(dist <= radius, $"tamed deer fled outside town radius: pos=({dx},{dy}), dist={dist} > {radius}");
+            }
+        }
+
+        // 3. Starting outside (axis AND exact diagonal corner) must monotonically progress homeward and enter town radius;
+        //    outside food bush must never pull a boundary-leashed tamed animal outside.
+        {
+            var rows = Enumerable.Range(0, 26).Select(y => y is 0 or 25 ? new string('^', 40) : "^" + new string('.', 38) + "^").ToList();
+            var map = MapOverride.FromRows(rows, new ResourcePlacement(23, 10, ResourceKind.Food, 20));
+            var world = new SimulationWorld(new SimulationOptions
+            {
+                WorldId = W,
+                Seed = 803,
+                MapWidth = 40,
+                MapHeight = 26,
+                Map = map,
+                Species = Default,
+                Vitals = new VitalsConfig(15_000, 0, 0, 0, 0, 250_000, 100_000, 4),
+                Mind = MindConfig.Default with { FatiguePerTick = 0 },
+                Settlements = SettlementConfig.Default with { FarmPlots = 0, Radius = radius },
+                Grants = ImmutableSortedDictionary<long, AuthorityGrant>.Empty.Add(God, AuthorityGrant.God),
+            });
+            world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 15, 10, Faction.Human, "Keep"));
+            world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 15, 10, Human));
+            world.Step();
+            long cursor = world.ReadEvents(0, 1).LatestSequence;
+
+            // 3a: hungry tamed wolf outside East at (26,10) with rabbit further outside at (28,10)
+            long wolfOut = Spawn(world, 26, 10, Wolf, ref cursor);
+            world.SetTamedForTest(wolfOut, 1);
+            Spawn(world, 28, 10, Rabbit, ref cursor);
+
+            // 3b: tamed deer outside diagonal corner at (24,19) -> dx=+9, dy=+9
+            long deerDiag = Spawn(world, 24, 19, Deer, ref cursor);
+            world.SetTamedForTest(deerDiag, 1);
+
+            // 3c: hungry tamed deer at boundary (21,10) next to outside berry bush at (23,10)
+            long deerFood = Spawn(world, 21, 10, Deer, ref cursor);
+            world.SetTamedForTest(deerFood, 1);
+
+            int prevWolfDist = 11, prevDiagCheb = 9;
+            for (int t = 0; t < 150; t++)
+            {
+                Run(world, 1, ref cursor);
+                var (wx, wy) = world.PositionOf(wolfOut);
+                int wDist = Math.Max(Math.Abs(wx - 15), Math.Abs(wy - 10));
+                if (prevWolfDist > radius)
+                    Check(wDist <= prevWolfDist, $"outside tamed wolf drifted further out ({prevWolfDist} -> {wDist}) at ({wx},{wy})");
+                else
+                    Check(wDist <= radius, $"re-entered tamed wolf exited radius ({wDist})");
+                prevWolfDist = wDist;
+
+                var (dx, dy) = world.PositionOf(deerDiag);
+                int dCheb = Math.Max(Math.Abs(dx - 15), Math.Abs(dy - 10));
+                if (prevDiagCheb > radius)
+                    Check(dCheb <= prevDiagCheb, $"diagonal outside deer drifted further out ({prevDiagCheb} -> {dCheb}) at ({dx},{dy})");
+                else
+                    Check(dCheb <= radius, $"re-entered diagonal deer exited radius ({dCheb})");
+                prevDiagCheb = dCheb;
+
+                var (fx, fy) = world.PositionOf(deerFood);
+                int fDist = Math.Max(Math.Abs(fx - 15), Math.Abs(fy - 10));
+                Check(fDist <= radius, $"tamed deer crossed radius to reach outside food: ({fx},{fy}), dist={fDist}");
+            }
+            Check(prevWolfDist <= radius, $"outside tamed wolf did not make it home inside radius {radius} (ended at dist {prevWolfDist})");
+            Check(prevDiagCheb <= radius, $"diagonal outside tamed deer did not make it home inside radius {radius} (ended at dist {prevDiagCheb})");
+        }
     }
 }

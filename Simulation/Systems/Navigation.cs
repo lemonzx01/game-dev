@@ -52,7 +52,7 @@ internal sealed class Navigation
 
     /// <returns>Path of cells (excluding the start, ending at the goal), empty if the start is a goal, or null if not found.</returns>
     public int[]? FindNearest(Terrain[] terrain, int width, int height, int startX, int startY,
-        int radius, int nodeBudget, Func<int, bool> isGoal, out int expanded)
+        int radius, int nodeBudget, Func<int, bool> isGoal, out int expanded, Func<int, bool>? canVisit = null)
     {
         expanded = 0;
         int start = startY * width + startX;
@@ -74,6 +74,7 @@ internal sealed class Navigation
                 if (Math.Max(Math.Abs(nx - startX), Math.Abs(ny - startY)) > radius) continue;
                 int next = ny * width + nx;
                 if (stamp[next] == seen || !TerrainRules.IsPassable(terrain[next])) continue;
+                if (canVisit is not null && !canVisit(next)) continue;
                 stamp[next] = seen;
                 parent[next] = cell;
                 if (isGoal(next)) return Unwind(next);

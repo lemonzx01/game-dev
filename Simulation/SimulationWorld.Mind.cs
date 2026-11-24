@@ -345,7 +345,12 @@ public sealed partial class SimulationWorld
                 if (e.Mind.PathIndex < path.Length)
                 {
                     int next = path[e.Mind.PathIndex++];
-                    if (!TerrainRules.IsPassable(terrain[next])) { OnPathBlocked(e, now); return; }
+                    int nx = next % options.MapWidth, ny = next / options.MapWidth;
+                    if (!TerrainRules.IsPassable(terrain[next]) || (HasAnimalLeash(e) && !WithinAnimalLeash(e, nx, ny)))
+                    {
+                        OnPathBlocked(e, now);
+                        return;
+                    }
                     MoveTo(e, next);
                     if (e.Mind.PathIndex < path.Length) { ScheduleStep(e, now + MoveTicks(e)); return; }
                 }
@@ -380,19 +385,47 @@ public sealed partial class SimulationWorld
         foreach (var (dx, dy) in Neighbours)
         {
             int x = e.X + dx, y = e.Y + dy;
-            if (!InBounds(x, y) || !TerrainRules.IsPassable(terrain[Cell(x, y)])) continue;
+            if (!InBounds(x, y) || !TerrainRules.IsPassable(terrain[Cell(x, y)]) || !WithinAnimalLeash(e, x, y)) continue;
             int d = Math.Abs(x - threat.X) + Math.Abs(y - threat.Y);
             if (d > bestDistance) { best = Cell(x, y); bestDistance = d; }
         }
         return best;
     }
 
+    // Deterministic step strictly closer to the leash center when a tamed/domestic animal starts outside its radius.
+    private int ReturnHomeStep(EntityState e, int hx, int hy, long now)
+    {
+        for (int pass = 0; pass < 2; pass++)
+        {
+            int best = -1, bestCheb = int.MaxValue, bestMan = int.MaxValue;
+            foreach (var (dx, dy) in Neighbours)
+            {
+                int x = e.X + dx, y = e.Y + dy;
+                if (!InBounds(x, y) || !TerrainRules.IsPassable(terrain[Cell(x, y)]) || !WithinAnimalLeash(e, x, y)) continue;
+                if (pass == 0 && RemembersDangerNear(e, x, y, now)) continue;
+                int cdx = Math.Abs(x - hx), cdy = Math.Abs(y - hy);
+                int cheb = Math.Max(cdx, cdy), man = cdx + cdy;
+                if (cheb < bestCheb || (cheb == bestCheb && man < bestMan))
+                {
+                    best = Cell(x, y);
+                    bestCheb = cheb;
+                    bestMan = man;
+                }
+            }
+            if (best >= 0) return best;
+        }
+        return -1;
+    }
+
     // Random passable neighbour from the AI stream (draws happen in scheduler order, so replay is stable).
-    // First pass avoids tiles near remembered danger (T010); the second accepts any allowed tile.
+    // Leashed animals outside their radius always take a deterministic step home; inside, pass 0 avoids remembered danger.
     private int WanderStep(EntityState e)
     {
-        int start = (int)(streams[AiStream].Draw() % 4);
         long now = tick + 1; // called while the next tick is being processed
+        if (AnimalLeashTarget(e, out int hx, out int hy, out int radius)
+            && Math.Max(Math.Abs(e.X - hx), Math.Abs(e.Y - hy)) > radius)
+            return ReturnHomeStep(e, hx, hy, now);
+        int start = (int)(streams[AiStream].Draw() % 4);
         for (int pass = 0; pass < 2; pass++)
             for (int k = 0; k < 4; k++)
             {
