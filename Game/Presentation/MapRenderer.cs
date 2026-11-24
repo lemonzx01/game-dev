@@ -25,7 +25,7 @@ public partial class MapRenderer : Node2D
 
     private SimulationBridge bridge = null!;
     private ObserverController? observer;
-    private Texture2D terrainAtlas = null!, humanoid = null!, plants = null!, characters = null!, dragon = null!;
+    private Texture2D terrainAtlas = null!, humanoid = null!, plants = null!, characters = null!;
     private ImageTexture terrain = null!;
     private int builtRevision = -1;
     private bool cameraPlaced;
@@ -41,8 +41,9 @@ public partial class MapRenderer : Node2D
         terrainAtlas = GD.Load<Texture2D>("res://Assets/Art/environment_tiles.png");
         humanoid = GD.Load<Texture2D>("res://Assets/Placeholders/humanoid_modular_32x32_placeholder.png");
         plants = GD.Load<Texture2D>("res://Assets/Art/environment_props.png");
-        characters = GD.Load<Texture2D>("res://Assets/Art/characters_24.png");
-        dragon = GD.Load<Texture2D>("res://Assets/Art/dragon_48.png");
+        // Owner art (Assets/Source/owner-art-2026-11-25, imported by tools/art/import_owner_art.py). The previous generated
+        // sheets (characters_24.png, dragon_48.png) stay in the repository as a fallback but are no longer drawn.
+        characters = GD.Load<Texture2D>("res://Assets/Art/owner_sheet.png");
         TextureFilter = TextureFilterEnum.Nearest;
         BuildTerrain();
         var map = bridge.Map;
@@ -196,9 +197,25 @@ public partial class MapRenderer : Node2D
 
     // ---- Character animation (presentation only: reads rows, never changes the simulation) ----
     // Sheet Assets/Art/characters_24.png (tools/art/make_characters.py): 24 px frames, columns below, rows per species/variant.
-    private const int DragonFrame = 48, DragonRow = 100;
-    private const int Frame = 24, ColIdle = 0, ColWalk = 2, ColWork = 6, ColAttack = 8, ColRead = 10, ColDead = 12;
-    private const int HumanRows = 8, DemonRow0 = 8, DemonRows = 4, SheepRow = 12, DeerRow = 13, RabbitRow = 14, WolfRow = 15;
+    // Sheet frames are 112×112 art pixels, bottom-centred. People are ~76 art px tall and are drawn two cells tall, so one
+    // art pixel is ArtScale world pixels; RowScale makes rabbits smaller and the dragon twice a person's size.
+    [Export] public float ArtScale = 32f / 76f;
+    private const int Frame = 112, ColIdle = 0, ColWalk = 2, ColWork = 6, ColAttack = 8, ColRead = 10, ColDead = 12;
+    private const int HumanRows = 4, GuardRow = 4, DemonRow0 = 5, DemonRows = 4, SheepRow = 9, DeerRow = 10, RabbitRow = 11, WolfRow = 12, DragonRow = 13;
+    private static float RowScale(int row) => row switch { RabbitRow => 0.65f, DragonRow => 2f, _ => 1f };
+
+    // Guards wear the guard sprite. Job is not on the snapshot row, so it is read from details at most every 20 ticks per person.
+    private readonly Dictionary<long, (long Tick, bool Guard)> guardCache = [];
+
+    private bool IsGuard(EntityRow row)
+    {
+        long now = bridge.Snapshot.Tick;
+        if (guardCache.TryGetValue(row.Id.Value, out var c) && now - c.Tick < 20 && now >= c.Tick) return c.Guard;
+        bool guard = bridge.Details(row.Id.Value) is { Job: Job.Guard };
+        if (guardCache.Count > 4096) guardCache.Clear();
+        guardCache[row.Id.Value] = (now, guard);
+        return guard;
+    }
 
     private sealed class Motion
     {
@@ -248,9 +265,9 @@ public partial class MapRenderer : Node2D
 
     private static int Hash(long id) => (int)(((ulong)id * 2654435761UL >> 7) & 0x7fffffff);
 
-    private static int SheetRow(EntityRow row) => row.VisualKey switch
+    private int SheetRow(EntityRow row) => row.VisualKey switch
     {
-        SpeciesCatalog.Human => Hash(row.Id.Value) % HumanRows,
+        SpeciesCatalog.Human => row.LifeState == LifeStates.Alive && IsGuard(row) ? GuardRow : Hash(row.Id.Value) % HumanRows,
         SpeciesCatalog.Demon => DemonRow0 + Hash(row.Id.Value) % DemonRows,
         SpeciesCatalog.Sheep => SheepRow,
         SpeciesCatalog.Deer => DeerRow,
@@ -294,7 +311,7 @@ public partial class MapRenderer : Node2D
             return;
         }
         // Bottom-centred on the cell with feet on its lower edge; mirrored when facing left.
-        float size = sprite.Region.Size.X;
+        float size = sprite.Region.Size.X * sprite.Scale;
         var origin = new Vector2((at.X + 0.5f) * CellSize, (at.Y + 1) * CellSize + 2);
         DrawSetTransform(origin, 0, new Vector2(sprite.Mirrored ? -1 : 1, 1));
         DrawTextureRectRegion(sprite.Sheet, new Rect2(-size / 2, -size, size, size), sprite.Region,
@@ -304,10 +321,10 @@ public partial class MapRenderer : Node2D
 
     /// <summary>
     /// The sheet, source frame and facing a creature is drawn with this frame (null: no sprite, placeholder square).
-    /// The dragon has its own 48 px sheet (Assets/Art/dragon_48.png, same columns); everyone else uses the 24 px sheet.
+    /// Every creature uses the owner sheet (Assets/Art/owner_sheet.png); Scale converts art pixels to world pixels.
     /// Also used by the acceptance test to prove what is actually drawn.
     /// </summary>
-    public (Texture2D Sheet, Rect2 Region, bool Mirrored)? SpriteOf(EntityRow row)
+    public (Texture2D Sheet, Rect2 Region, bool Mirrored, float Scale)? SpriteOf(EntityRow row)
     {
         int sheetRow = SheetRow(row);
         if (sheetRow < 0) return null;
@@ -315,9 +332,6 @@ public partial class MapRenderer : Node2D
         motion.TryGetValue(row.Id.Value, out var m);
         bool moving = !dead && m is not null && m.Pos.DistanceSquaredTo(m.Target) > 0.0004f;
         int col = SheetColumn(row, moving, sheetRow >= SheepRow);
-        bool big = sheetRow == DragonRow;
-        int size = big ? DragonFrame : Frame;
-        var (sheet, srcRow) = big ? (dragon, 0) : (characters, sheetRow);
-        return (sheet, new Rect2(col * size, srcRow * size, size, size), m is { Left: true });
+        return (characters, new Rect2(col * Frame, sheetRow * Frame, Frame, Frame), m is { Left: true }, ArtScale * RowScale(sheetRow));
     }
 }

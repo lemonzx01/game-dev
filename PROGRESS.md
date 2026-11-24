@@ -6,6 +6,10 @@ T001–T014 DONE and merged to main (2026-11-24; T003–T014 merged by owner ins
 
 ## Handoff log
 
+**2026-11-25 | Claude Code | Owner character art | main | merged (self-reviewed, A009)**
+
+- Owner AI-generated art (4 JPEGs) imported by tools/art/import_owner_art.py into Game/Assets/Art/owner_sheet.png (grid recovery, median per art pixel, magenta key, derived poses); renderer draws people 2 cells tall, guards in the guard sprite, dragon at 2x. All 6 Godot acceptances pass; frames docs/handoffs/owner-art-*.png. Tool/terms of the image generator still to be recorded. Handoff docs/handoffs/owner-art.md.
+
 **2026-11-25 | Claude Code | FIX-R2-visuals | main | merged (self-reviewed, A009)**
 
 - T019 review findings 10/11/12/15(visual)/2(inspector) fixed in Game/** with EffectsAcceptance regressions (mutation-checked for #10). Simulation findings handed to Antigravity as FIX-R2. All 6 Godot acceptances pass. Handoff docs/handoffs/FIX-R2-visuals.md.
