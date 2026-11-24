@@ -242,7 +242,7 @@ public sealed partial class SimulationWorld
                 if (e.Job == Job.Guard) Emit(new WorldEvent(0, now, EventKinds.GuardAlert, 0, e.Id.Value, intruder.Id.Value, intruder.X, intruder.Y, e.SettlementId));
                 break;
             case ActionKind.Tame:
-                if (OnCooldown(e.Mind, kind, now) || !WantsToTame(e, e.Vitals.At(now, options.Vitals), now) || TameCandidate(e) is not { } pet) return false;
+                if (OnCooldown(e.Mind, kind, now) || !WantsToTame(e, e.Vitals.At(now, options.Vitals), now) || TameCandidate(e, now) is not { } pet) return false;
                 huntTarget = pet.Id.Value;
                 break;
             case ActionKind.Work:

@@ -31,12 +31,33 @@ public sealed partial class SimulationWorld
 {
     private TamingConfig TameCfg => options.Taming;
 
-    private bool WantsToTame(EntityState e, VitalsView v, long now) =>
-        e.SettlementId != 0 && e.Job != Job.Guard && !e.OnTrip && v.Hunger < MindCfg.EatStartNeed && v.Thirst < MindCfg.DrinkStartNeed
-        && StageOf(e, now) != LifeStage.Juvenile && SettlementOf(e)!.Food > TameCfg.FoodReserve && TameCandidate(e) is not null;
+    private bool IsEligibleFeeder(EntityState feeder, long now, out Settlement? town)
+    {
+        town = null;
+        if (feeder.LifeState != LifeStates.Alive || !IsSapient(SpeciesOf(feeder)) || feeder.Job == Job.Guard
+            || feeder.OnTrip || StageOf(feeder, now) == LifeStage.Juvenile) return false;
+        town = SettlementOf(feeder);
+        return town is not null && town.Food > TameCfg.FoodReserve;
+    }
 
-    /// <summary>Nearest untamed animal of a tameable species within perception that nobody else is taming (Manhattan, then id).</summary>
-    private EntityState? TameCandidate(EntityState e)
+    private bool HasActiveAttemptClaim(EntityState animal, EntityState self, long now)
+    {
+        if (animal.TamerId == 0 || animal.TamerId == self.Id.Value || now >= animal.TameAttemptUntil) return false;
+        if (FindLive(animal.TamerId) is not (int ti and >= 0)) return false;
+        var current = entities[ti];
+        return current.LifeState == LifeStates.Alive && current.Job != Job.Guard && !current.OnTrip;
+    }
+
+    private bool CanFeedAnimal(EntityState feeder, EntityState animal, long now) =>
+        IsEligibleFeeder(feeder, now, out _) && animal.LifeState == LifeStates.Alive && animal.TamedTo == 0
+        && animal.SettlementId == 0 && SpeciesOf(animal) is { TameTrust: > 0 } && !HasActiveAttemptClaim(animal, feeder, now);
+
+    private bool WantsToTame(EntityState e, VitalsView v, long now) =>
+        IsEligibleFeeder(e, now, out _) && v.Hunger < MindCfg.EatStartNeed && v.Thirst < MindCfg.DrinkStartNeed
+        && TameCandidate(e, now) is not null;
+
+    /// <summary>Nearest untamed animal of a tameable species within perception without an active competing claim (Manhattan, then id).</summary>
+    private EntityState? TameCandidate(EntityState e, long now)
     {
         EntityState? best = null;
         int bestDistance = int.MaxValue, r = MindCfg.PerceptionRadius;
@@ -44,7 +65,7 @@ public sealed partial class SimulationWorld
         {
             var o = entities[FindLive(id)];
             if (o.LifeState != LifeStates.Alive || o.TamedTo != 0 || SpeciesOf(o) is not { TameTrust: > 0 } || o.SettlementId != 0) return;
-            if (o.TamerId != 0 && o.TamerId != e.Id.Value && FindLive(o.TamerId) is >= 0 and var t && entities[t].LifeState == LifeStates.Alive) return;
+            if (HasActiveAttemptClaim(o, e, now)) return;
             if (Math.Max(Math.Abs(o.X - e.X), Math.Abs(o.Y - e.Y)) > r) return;
             int d = Math.Abs(o.X - e.X) + Math.Abs(o.Y - e.Y);
             if (d < bestDistance || (d == bestDistance && o.Id.Value < best!.Id.Value)) { best = o; bestDistance = d; }
@@ -55,7 +76,7 @@ public sealed partial class SimulationWorld
     private void TameStep(EntityState e, long now)
     {
         var animal = FindLive(e.Mind.TargetEntity) is int ai and >= 0 ? entities[ai] : null;
-        if (animal is null || animal.LifeState != LifeStates.Alive || animal.TamedTo != 0 || now >= e.Mind.HuntUntil)
+        if (animal is null || now >= e.Mind.HuntUntil || !CanFeedAnimal(e, animal, now))
         {
             e.Mind.NoWorkUntil = now + TameCfg.CooldownTicks;
             FinishAction(e, now);
@@ -73,14 +94,15 @@ public sealed partial class SimulationWorld
         FinishAction(e, now);
     }
 
-    private void Feed(EntityState feeder, EntityState animal, long now)
+    private bool Feed(EntityState feeder, EntityState animal, long now)
     {
-        if (SettlementOf(feeder) is not { } town || town.Food <= TameCfg.FoodReserve) return; // nothing to spare: no cost, no feed
+        if (!CanFeedAnimal(feeder, animal, now) || SettlementOf(feeder) is not { } town) return false;
         var before = BuyerSignature(town);
         town.Food--;
         InvalidateSettlementEconomy(town, before);
         var sd = SpeciesOf(animal)!;
         if (animal.TamerId != feeder.Id.Value) { animal.TamerId = feeder.Id.Value; animal.Trust = 0; } // trust is personal
+        animal.TameAttemptUntil = now + TameCfg.CooldownTicks + TameCfg.GiveUpTicks;
         int chance = Math.Clamp(TameCfg.BaseAcceptPercent - FearAt(animal, now) / 20 + feeder.Psyche.Sociability / 50, 5, 95);
         bool accepted = (int)(streams[PsycheStream].Draw() % 100) < chance;
         if (accepted)
@@ -97,12 +119,14 @@ public sealed partial class SimulationWorld
             RaiseFear(animal, 500, now);
         }
         Emit(new WorldEvent(0, now, EventKinds.TameFed, 0, feeder.Id.Value, animal.Id.Value, animal.X, animal.Y, accepted ? 1 : 0, animal.Trust));
-        if (animal.Trust < sd.TameTrust) return;
+        if (animal.Trust < sd.TameTrust) return true;
         animal.TamedTo = town.Id;
+        animal.TameAttemptUntil = 0; // completed bond outlives the feeder without holding an attempt lock
         animal.HomeX = town.X;
         animal.HomeY = town.Y;
         long sequence = Emit(new WorldEvent(0, now, EventKinds.AnimalTamed, 0, feeder.Id.Value, animal.Id.Value, animal.X, animal.Y, town.Id, animal.Species), critical: true);
         milestones.Add(new WorldEvent(sequence, now, EventKinds.AnimalTamed, 0, feeder.Id.Value, animal.Id.Value, animal.X, animal.Y, town.Id, animal.Species));
+        return true;
     }
 
     private Settlement? TamedHome(EntityState e) => e.TamedTo > 0 && e.TamedTo <= settlements.Count ? settlements[e.TamedTo - 1] : null;
@@ -113,4 +137,6 @@ public sealed partial class SimulationWorld
         e.TamerId = tamer;
         e.Trust = trust;
     }
+
+    internal ulong PsycheRngStateForTest => streams[PsycheStream].State;
 }

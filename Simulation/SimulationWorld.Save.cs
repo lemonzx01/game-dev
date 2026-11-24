@@ -18,7 +18,7 @@ public sealed partial class SimulationWorld
 {
     private static readonly byte[] Magic = "FWSSAVE\0"u8.ToArray();
     public const uint SaveFormatVersion = 1;
-    public const uint StateSchema = 14;
+    public const uint StateSchema = 15;
     private static readonly JsonSerializerOptions OptionsJson = new() { WriteIndented = false };
 
     // ---- Save ----------------------------------------------------------------------------------
@@ -373,18 +373,23 @@ public sealed partial class SimulationWorld
             var sd = SpeciesOf(e);
             Require(e.TamerId >= 0 && e.TamerId < ids.Next && e.TamerId != e.Id.Value,
                 "Tamer ID invalid or outside entity timeline.");
+            Require(e.TameAttemptUntil <= tick + (long)TameCfg.CooldownTicks + TameCfg.GiveUpTicks,
+                "Taming attempt claim expires past valid horizon.");
             int tameTrust = sd?.TameTrust ?? 0;
             if (tameTrust == 0)
             {
-                Require(e.TamedTo == 0 && e.TamerId == 0 && e.Trust == 0, "Untameable entity holds taming state.");
+                Require(e.TamedTo == 0 && e.TamerId == 0 && e.Trust == 0 && e.TameAttemptUntil == 0,
+                    "Untameable entity holds taming state.");
             }
             else
             {
                 Require(e.Trust <= tameTrust, "Entity trust exceeds species TameTrust.");
                 if (e.TamedTo > 0)
-                    Require(e.Trust == tameTrust && e.TamerId > 0, "Tamed entity requires full species trust and a tamer.");
+                    Require(e.Trust == tameTrust && e.TamerId > 0 && e.TameAttemptUntil == 0,
+                        "Tamed entity requires full species trust, a tamer and cleared attempt lock.");
                 else
-                    Require(e.Trust < tameTrust && (e.Trust == 0 || e.TamerId > 0), "Untamed trust state invalid.");
+                    Require(e.Trust < tameTrust && (e.Trust == 0 || e.TamerId > 0) && (e.TameAttemptUntil == 0 || e.TamerId > 0),
+                        "Untamed trust state invalid.");
             }
             if (e.TamerId > 0)
             {

@@ -12,6 +12,9 @@ internal static class FixR2Tests
     [
         ("FIX-R2 #1 hunt rechecks eligibility before movement, damage, fatigue or XP", HuntEligibilityRecheckedAtExecution),
         ("FIX-R2 #2 load rejects absent town, future mana, excessive trust and unallocated tamer, permits dead tamer", LoadRejectsInvalidAdventureAndAcceptsDeceasedTamer),
+        ("FIX-R2 #3 two simultaneous feeders preserve second town food, trust, tamer and RNG", TwoSimultaneousFeedersPreserveSecondTownState),
+        ("FIX-R2 #4 abandoned refused taming attempt expires while completed bond survives", AbandonedRefusedAttemptExpiresWhileBondSurvives),
+        ("FIX-R2 #5 heal charges exact mana and fatigue and leaves ineligible casts unchanged", HealChargesExactFatigueAndSkipsIneligible),
     ];
 
     private static void Check(bool ok, string message)
@@ -37,9 +40,9 @@ internal static class FixR2Tests
         return all;
     }
 
-    private static long Spawn(SimulationWorld world, int x, int y, int species, ref long cursor)
+    private static long Spawn(SimulationWorld world, int x, int y, int species, ref long cursor, Sex sex = Sex.Unspecified)
     {
-        world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, x, y, species));
+        world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, x, y, species, sex));
         return Run(world, 1, ref cursor).First(e => e.Kind == EventKinds.CommandApplied).Target;
     }
 
@@ -379,5 +382,251 @@ internal static class FixR2Tests
             for (int t = 0; t < 100; t++) { w.Step(); loaded.Step(); }
             Check(loaded.StateHash() == w.StateHash(), "world with deceased feeder diverged after load");
         }
+    }
+
+    // ---- Finding 3 ------------------------------------------------------------------------------
+
+    private static void TwoSimultaneousFeedersPreserveSecondTownState()
+    {
+        var rows = Enumerable.Range(0, 15).Select(y =>
+        {
+            if (y is 0 or 14) return new string('^', 46);
+            var line = ("^" + new string('.', 44) + "^").ToCharArray();
+            if (y is 6 or 8)
+                for (int x = 18; x <= 22; x++) line[x] = '^';
+            return new string(line);
+        }).ToList();
+        var world = new SimulationWorld(new SimulationOptions
+        {
+            WorldId = W,
+            Seed = 305,
+            MapWidth = 46,
+            MapHeight = 15,
+            Map = MapOverride.FromRows(rows),
+            Species = Default,
+            Vitals = new VitalsConfig(0, 0, 0, 0, 0, 250_000, 100_000, 4),
+            Mind = MindConfig.Default with { FatiguePerTick = 0 },
+            Settlements = SettlementConfig.Default with { FarmPlots = 0, Radius = 12 },
+            Taming = TamingConfig.Default with { BaseAcceptPercent = 100, TrustPerFeed = 20, CooldownTicks = 60, GiveUpTicks = 120 },
+            Grants = ImmutableSortedDictionary<long, AuthorityGrant>.Empty.Add(God, AuthorityGrant.God),
+        });
+
+        world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 10, 7, Faction.Human, "West"));
+        world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 34, 7, Faction.Human, "East"));
+        world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 10, 7, Human)); // West guard
+        world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 34, 7, Human)); // East guard
+        world.Step();
+        world.SetStorageForTest(1, food: 300, wood: 100, coins: 50);
+        world.SetStorageForTest(2, food: 300, wood: 100, coins: 50);
+        long cursor = world.ReadEvents(0, 1).LatestSequence;
+
+        long deer = Spawn(world, 20, 7, Deer, ref cursor);
+        // Spawn Feeder A (closer: 4 tiles -> ~9 ticks) and Feeder B (farther: 7 tiles -> ~15 ticks)
+        // in the same tick so both select the unclaimed deer before the first feed executes.
+        world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 16, 7, Human));
+        world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 27, 7, Human));
+        var spawnEvents = Run(world, 1, ref cursor).Where(e => e.Kind == EventKinds.CommandApplied).ToList();
+        long feederA = spawnEvents[0].Target;
+        long feederB = spawnEvents[1].Target;
+        Check(world.ReadEntityDetails(W, new EntityId(feederA))!.SettlementId == 1, "feeder A belongs to West");
+        Check(world.ReadEntityDetails(W, new EntityId(feederB))!.SettlementId == 2, "feeder B belongs to East");
+
+        bool aStarted = false, bStarted = false;
+        long firstFeeder = 0;
+        int trustAfterFirst = 0;
+        long secondFoodAtFirstFeed = 0;
+        ulong rngAtFirstFeed = 0;
+        var afterFirstEvents = new List<WorldEvent>();
+
+        for (int t = 0; t < 40; t++)
+        {
+            var evs = Run(world, 1, ref cursor);
+            foreach (var ev in evs)
+            {
+                if (ev.Kind == EventKinds.ActionStarted && ev.Reason == (int)ActionKind.Tame && ev.Target == deer)
+                {
+                    if (ev.Actor == feederA) aStarted = true;
+                    if (ev.Actor == feederB) bStarted = true;
+                }
+            }
+            var fed = evs.Where(e => e.Kind == EventKinds.TameFed && e.Target == deer).ToList();
+            if (fed.Count > 0 && firstFeeder == 0)
+            {
+                Check(aStarted && bStarted, $"both feeders must have started Tame before first feed (A={aStarted}, B={bStarted})");
+                firstFeeder = fed[0].Actor;
+                long secondTownIndex = firstFeeder == feederA ? 1 : 0; // 0-based index into ReadSettlements()
+                trustAfterFirst = world.ReadAdventure(W, new EntityId(deer))!.Trust;
+                secondFoodAtFirstFeed = world.ReadSettlements()[(int)secondTownIndex].Food;
+                rngAtFirstFeed = world.PsycheRngStateForTest;
+                continue;
+            }
+            if (firstFeeder != 0)
+            {
+                afterFirstEvents.AddRange(evs);
+                long secondFeeder = firstFeeder == feederA ? feederB : feederA;
+                // Wait until second feeder finishes or abandons its concurrent attempt
+                if (world.ActionOf(secondFeeder) != ActionKind.Tame && t >= 18) break;
+            }
+        }
+
+        Check(firstFeeder != 0, "neither feeder completed first feed");
+        long otherFeeder = firstFeeder == feederA ? feederB : feederA;
+        int otherTownIdx = firstFeeder == feederA ? 1 : 0;
+        // Run enough extra ticks to ensure second feeder's stale step would have landed if not rejected,
+        // while staying well inside first feeder's CooldownTicks (60) so no second feed occurs from first feeder either.
+        afterFirstEvents.AddRange(Run(world, 15, ref cursor));
+        Check(!afterFirstEvents.Any(e => e.Kind == EventKinds.TameFed && e.Actor == otherFeeder),
+            "second concurrent feeder must not feed or reset first feeder's claim");
+        Check(world.ReadSettlements()[otherTownIdx].Food == secondFoodAtFirstFeed,
+            $"second town food changed ({secondFoodAtFirstFeed} -> {world.ReadSettlements()[otherTownIdx].Food})");
+        var adv = world.ReadAdventure(W, new EntityId(deer))!;
+        Check(adv.TamerId == firstFeeder && adv.Trust == trustAfterFirst,
+            $"tamer/trust altered by second feeder (Tamer={adv.TamerId} expected {firstFeeder}, Trust={adv.Trust} expected {trustAfterFirst})");
+        Check(world.PsycheRngStateForTest == rngAtFirstFeed, "stale second feed drew from Psyche RNG");
+    }
+
+    // ---- Finding 4 ------------------------------------------------------------------------------
+
+    private static void AbandonedRefusedAttemptExpiresWhileBondSurvives()
+    {
+        var rows = Enumerable.Range(0, 15).Select(y =>
+        {
+            if (y is 0 or 14) return new string('^', 46);
+            var line = ("^" + new string('.', 44) + "^").ToCharArray();
+            if (y is 6 or 8)
+                for (int x = 18; x <= 23; x++) line[x] = '^';
+            if (y == 7) { line[18] = '^'; line[23] = '^'; }
+            return new string(line);
+        }).ToList();
+        var world = new SimulationWorld(new SimulationOptions
+        {
+            WorldId = W,
+            Seed = 404,
+            MapWidth = 46,
+            MapHeight = 15,
+            Map = MapOverride.FromRows(rows),
+            Species = Default,
+            Vitals = new VitalsConfig(0, 0, 0, 0, 0, 250_000, 100_000, 4),
+            Mind = MindConfig.Default with { FatiguePerTick = 0 },
+            Psyche = PsycheConfig.Default with { FearDecayPerTick = 50 },
+            Settlements = SettlementConfig.Default with { FarmPlots = 0, Radius = 11, FoodTarget = 0, WoodTarget = 0 },
+            Taming = TamingConfig.Default with { BaseAcceptPercent = 75, TrustPerFeed = 20, CooldownTicks = 15, GiveUpTicks = 25 },
+            Grants = ImmutableSortedDictionary<long, AuthorityGrant>.Empty.Add(God, AuthorityGrant.God),
+        });
+
+        world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 10, 7, Faction.Human, "West"));
+        world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 33, 7, Faction.Human, "East"));
+        world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 10, 7, Human)); // West guard
+        world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 33, 7, Human)); // East guard
+        world.Step();
+        world.SetStorageForTest(1, food: 300, wood: 100, coins: 50);
+        world.SetStorageForTest(2, food: 300, wood: 100, coins: 50);
+        long cursor = world.ReadEvents(0, 1).LatestSequence;
+        Run(world, 15, ref cursor); // let both guards assume Guard job
+
+        long feederA = Spawn(world, 19, 7, Human, ref cursor, Sex.Female); // d(West)=9 < d(East)=14
+        Check(world.ReadEntityDetails(W, new EntityId(feederA))!.Job != Job.Guard, "Feeder A must not be Guard");
+        long deer = Spawn(world, 20, 7, Deer, ref cursor);
+        // Raise deer's fear high enough so Feed #1 refuses deterministically, while FearDecayPerTick=50 clears it after lock expiry.
+        world.RaiseFearForTest(deer, 2000);
+
+        bool refused = false;
+        for (int t = 0; t < 40; t++)
+        {
+            var evs = Run(world, 1, ref cursor);
+            var f = evs.FirstOrDefault(e => e.Kind == EventKinds.TameFed && e.Actor == feederA && e.Target == deer);
+            if (f.Kind == EventKinds.TameFed)
+            {
+                Check(f.Reason == 0 && f.Amount == 0, $"expected Feed #1 refusal at zero trust, got Reason={f.Reason}, Trust={f.Amount}");
+                refused = true;
+                break;
+            }
+        }
+        Check(refused, "Feeder A did not execute Feed #1 refusal");
+
+        // Feeder A remains alive as a normal villager, but stops trying because West drops food to FoodReserve.
+        world.SetStorageForTest(1, food: TamingConfig.Default.FoodReserve, wood: 100, coins: 50);
+        // Spawn Feeder B (same sex -> no Mating distracting from Tame) in East inside the shared pen (x=22: d(East)=11 < d(West)=12) with full spare food.
+        long feederB = Spawn(world, 22, 7, Human, ref cursor, Sex.Female);
+        Check(world.ReadEntityDetails(W, new EntityId(feederB))!.SettlementId == 2, "Feeder B belongs to East");
+
+        var later = Run(world, 1200, ref cursor);
+        Check(world.ReadEntityDetails(W, new EntityId(feederA))!.LifeState == LifeStates.Alive, "Feeder A remained alive");
+        var bFirstFeed = later.FirstOrDefault(e => e.Kind == EventKinds.TameFed && e.Actor == feederB && e.Target == deer && e.Reason == 1);
+        var bDet = world.ReadEntityDetails(W, new EntityId(feederB))!;
+        var dAdv = world.ReadAdventure(W, new EntityId(deer))!;
+        string fedLog = string.Join(", ", later.Where(e => e.Kind == EventKinds.TameFed).Select(e => $"a={e.Actor}:r={e.Reason}:t={e.Amount}"));
+        Check(bFirstFeed.Kind == EventKinds.TameFed,
+            $"Feeder B remained permanently locked out (job={bDet.Job}, act={world.ActionOf(feederB)}, pos=({bDet.X},{bDet.Y}), tamer={dAdv.TamerId}, trust={dAdv.Trust}, fed=[{fedLog}])");
+        Check(later.Any(e => e.Kind == EventKinds.AnimalTamed && e.Actor == feederB && e.Target == deer && e.Reason == 2),
+            "Feeder B could not complete taming after Feeder A's attempt expired");
+
+        // Part B: durable bond survives original successful feeder dying (and West regaining spare food).
+        world.KillForTest(feederB);
+        world.SetStorageForTest(1, food: 300, wood: 100, coins: 50);
+        var postBond = Run(world, 80, ref cursor);
+        Check(world.ReadEntityDetails(W, new EntityId(feederB))!.LifeState == LifeStates.Dead, "Feeder B is dead");
+        var finalAdv = world.ReadAdventure(W, new EntityId(deer))!;
+        Check(finalAdv.TamedTo == 2 && finalAdv.TamerId == feederB && finalAdv.Trust == Default[Deer].TameTrust,
+            $"completed durable bond altered after feeder death (TamedTo={finalAdv.TamedTo}, Tamer={finalAdv.TamerId}, Trust={finalAdv.Trust})");
+        Check(!postBond.Any(e => e.Kind == EventKinds.TameFed && e.Target == deer),
+            "another town attempted to re-tame an already bonded animal");
+    }
+
+    // ---- Finding 5 ------------------------------------------------------------------------------
+
+    private static void HealChargesExactFatigueAndSkipsIneligible()
+    {
+        var magic = MagicConfig.Default with { ManaRegenTicks = 1000 }; // isolate exact cast cost from passive regen
+        var world = FlatWorld(width: 40, height: 14, seed: 505, magic: magic);
+        world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 20, 7, Faction.Human, "Keep"));
+        for (int k = 0; k < 4; k++)
+            world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 19 + k % 2, 7 + k / 2, Human));
+        world.Step();
+        world.SetStorageForTest(1, food: 300, wood: 100, coins: 50);
+        long cursor = world.ReadEvents(0, 1).LatestSequence;
+        Run(world, 30, ref cursor);
+
+        var people = world.ReadSnapshot().Chunks.SelectMany(c => c).Where(r => r.VisualKey == SpeciesCatalog.Human).Select(r => r.Id.Value).ToList();
+        long healer = people.First(id => world.ReadEntityDetails(W, new EntityId(id))!.Job != Job.Guard);
+        long hurt = people.First(id => id != healer && world.ReadEntityDetails(W, new EntityId(id))!.Job != Job.Guard);
+        world.SetSkillForTest(healer, Skill.Scholarship, 10_000);
+        world.SetHealthForTest(hurt, 300_000);
+
+        bool healedOnce = false;
+        for (int t = 0; t < 60; t++)
+        {
+            long manaBefore = world.ReadAdventure(W, new EntityId(healer))!.Mana;
+            long fatigueBefore = world.FatigueOf(healer);
+            long healthBefore = world.ReadEntityDetails(W, new EntityId(hurt))!.Health;
+            var evs = Run(world, 1, ref cursor);
+            var cast = evs.FirstOrDefault(e => e.Kind == EventKinds.SpellCast && e.Actor == healer && e.Reason == (int)Spell.Heal);
+            if (cast.Kind == EventKinds.SpellCast)
+            {
+                long manaAfter = world.ReadAdventure(W, new EntityId(healer))!.Mana;
+                long fatigueAfter = world.FatigueOf(healer);
+                long healthAfter = world.ReadEntityDetails(W, new EntityId(hurt))!.Health;
+                Check(manaAfter == manaBefore - magic.HealCost,
+                    $"mana delta mismatch on Heal: {manaBefore} -> {manaAfter} (cost {magic.HealCost})");
+                Check(fatigueAfter == fatigueBefore + CombatConfig.Default.FatiguePerAttack,
+                    $"fatigue delta mismatch on Heal: {fatigueBefore} -> {fatigueAfter} (expected +{CombatConfig.Default.FatiguePerAttack})");
+                Check(healthAfter == healthBefore + magic.HealAmount,
+                    $"health delta mismatch on Heal: {healthBefore} -> {healthAfter} (expected +{magic.HealAmount})");
+                healedOnce = true;
+                break;
+            }
+        }
+        Check(healedOnce, "scholar did not cast Heal on wounded townmate");
+
+        // Now all townmates are at/above HealBelowHealth: no target is eligible -> zero mana/fatigue/health change.
+        world.SetHealthForTest(hurt, magic.HealBelowHealth);
+        long idleMana = world.ReadAdventure(W, new EntityId(healer))!.Mana;
+        long idleFatigue = world.FatigueOf(healer);
+        long idleHealth = world.ReadEntityDetails(W, new EntityId(hurt))!.Health;
+        var noEvents = Run(world, 50, ref cursor);
+        Check(!noEvents.Any(e => e.Kind == EventKinds.SpellCast), "Heal cast with no eligible target");
+        Check(world.ReadAdventure(W, new EntityId(healer))!.Mana == idleMana, "mana changed when no target eligible");
+        Check(world.FatigueOf(healer) == idleFatigue, "fatigue changed when no target eligible");
+        Check(world.ReadEntityDetails(W, new EntityId(hurt))!.Health == idleHealth, "health changed when no target eligible");
     }
 }

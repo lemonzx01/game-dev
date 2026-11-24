@@ -237,7 +237,28 @@ public sealed partial class SimulationWorld
         return true;
     }
 
-    /// <summary>Heal: restores health of the most wounded townmate in range (below the threshold). Costs mana only when cast.</summary>
+    private bool CanHeal(EntityState caster, EntityState target, long now) =>
+        caster.LifeState == LifeStates.Alive && target.LifeState == LifeStates.Alive
+        && caster.SettlementId != 0 && target.SettlementId == caster.SettlementId
+        && KnowsMagic(caster)
+        && Math.Max(Math.Abs(target.X - caster.X), Math.Abs(target.Y - caster.Y)) <= MagicCfg.HealRange
+        && target.Vitals.At(now, options.Vitals).Health < MagicCfg.HealBelowHealth;
+
+    /// <summary>Heal a specific eligible townmate. Shared validation, mana, and fatigue costs (reused by T020).</summary>
+    private bool CastHeal(EntityState caster, EntityState target, long now)
+    {
+        if (!CanHeal(caster, target, now) || !Spend(caster, MagicCfg.HealCost, now)) return false;
+        AddFatigue(caster, CombatCfg.FatiguePerAttack, now);
+        var v = target.Vitals.At(now, options.Vitals);
+        long healed = Math.Min(MagicCfg.HealAmount, VitalsConfig.MaxHealth - v.Health);
+        target.Vitals = new VitalsAnchor(now, v.Hunger, v.Thirst, v.Health + healed);
+        ScheduleDeath(target);
+        Relate(target, caster.Id.Value, 300, now);
+        Emit(new WorldEvent(0, now, EventKinds.SpellCast, 0, caster.Id.Value, target.Id.Value, target.X, target.Y, (int)Spell.Heal, healed));
+        return true;
+    }
+
+    /// <summary>Heal: restores health of the most wounded townmate in range (below the threshold). Costs mana and fatigue only when cast.</summary>
     private bool TryHeal(EntityState caster, long now)
     {
         if (caster.SettlementId == 0 || !KnowsMagic(caster) || ManaAt(caster, now) < MagicCfg.HealCost) return false;
@@ -251,14 +272,7 @@ public sealed partial class SimulationWorld
             long h = o.Vitals.At(now, options.Vitals).Health;
             if (h < bestHealth || (h == bestHealth && best is not null && o.Id.Value < best.Id.Value)) { best = o; bestHealth = h; }
         });
-        if (best is null || !Spend(caster, MagicCfg.HealCost, now)) return false;
-        var v = best.Vitals.At(now, options.Vitals);
-        long healed = Math.Min(MagicCfg.HealAmount, VitalsConfig.MaxHealth - v.Health);
-        best.Vitals = new VitalsAnchor(now, v.Hunger, v.Thirst, v.Health + healed);
-        ScheduleDeath(best);
-        Relate(best, caster.Id.Value, 300, now);
-        Emit(new WorldEvent(0, now, EventKinds.SpellCast, 0, caster.Id.Value, best.Id.Value, best.X, best.Y, (int)Spell.Heal, healed));
-        return true;
+        return best is not null && CastHeal(caster, best, now);
     }
 
     // ---- State, reads, test hooks --------------------------------------------------------------
@@ -270,6 +284,7 @@ public sealed partial class SimulationWorld
         w.Write(e.TamedTo);
         w.Write(e.TamerId);
         w.Write(e.Trust);
+        w.Write(e.TameAttemptUntil);
     }
 
     private void ReadAdventureFrom(BinaryReader r, EntityState e)
@@ -279,8 +294,9 @@ public sealed partial class SimulationWorld
         e.TamedTo = r.ReadInt32();
         e.TamerId = r.ReadInt64();
         e.Trust = r.ReadInt32();
+        e.TameAttemptUntil = r.ReadInt64();
         if (e.Mana < 0 || e.ManaTick < 0 || e.ManaTick > tick || e.Mana > MaxMana(e)
-            || e.TamedTo < 0 || e.TamerId < 0 || e.Trust < 0)
+            || e.TamedTo < 0 || e.TamerId < 0 || e.Trust < 0 || e.TameAttemptUntil < 0)
             throw new InvalidDataException("Mana or taming state invalid.");
     }
 

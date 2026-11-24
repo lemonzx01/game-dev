@@ -27,8 +27,9 @@ internal sealed class EntityState
     public long ReadingBook, ReadingSince;                   // open reading session (0 = none)
     public long Mana, ManaTick;                              // T019 mana anchor (regenerates with elapsed ticks)
     public int TamedTo;                                      // settlement that tamed this animal (0 = wild)
-    public long TamerId;                                     // who is building trust with this animal
+    public long TamerId;                                     // who is building trust with this animal (or completed bond)
     public int Trust;                                        // trust toward TamerId
+    public long TameAttemptUntil;                            // tick when an active untamed attempt claim expires (0 = none)
     public long BirthTick;
     public VitalsAnchor Vitals;
     public long ScheduledDeathTick = long.MaxValue; // only the item due at this tick is live; older items are stale
