@@ -6,6 +6,10 @@ T001–T014 DONE and merged to main (2026-11-24; T003–T014 merged by owner ins
 
 ## Handoff log
 
+**2026-11-25 | Claude Code | T018 playtest checklist, known issues, T020 design | main | docs**
+
+- docs/PLAYTEST.md (owner checklist, Thai, 15–30 min), docs/KNOWN_ISSUES.md (consolidated; new K1: guards never retreat from a dragon), docs/design/T020-possession.md (grants, commands, AI suspension, save/hash, tests, Godot controls, owner questions). PLAYING.md covers T015–T019 behaviour.
+
 **2026-11-25 | Claude Code | T019 visuals | main | merged (self-reviewed, A009)**
 
 - Dragon 48 px sprite (tools/art/make_dragon.py, CC0); pixelfx effects (fireball, blunt-hit, heal-aoe, collect-burst; MIT, commit 5294518) driven by real SpellCast/Attacked/AnimalTamed events in a camera-following FxLayer; inspector mana/trust/tamed; feed lines; God spawn cycle includes the dragon. Merged main: 89/89 tests; T007, T008, GodTools, Settlement and new Effects acceptances pass; frames checked (docs/handoffs/T019-visuals*.png). Handoff docs/handoffs/T019-visuals.md.
