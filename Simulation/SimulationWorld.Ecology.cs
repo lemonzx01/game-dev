@@ -176,6 +176,12 @@ public sealed partial class SimulationWorld
     /// <summary>True if moving to (x, y) keeps a domestic animal inside its leash, or brings it closer to home.</summary>
     private bool WithinLeash(EntityState e, int x, int y)
     {
+        if (SettlementOf(e) is { } town) // members roam within the town radius
+        {
+            int from = Math.Max(Math.Abs(e.X - town.X), Math.Abs(e.Y - town.Y));
+            int to = Math.Max(Math.Abs(x - town.X), Math.Abs(y - town.Y));
+            return to <= TownCfg.Radius || to < from;
+        }
         var sd = SpeciesOf(e);
         if (sd is null || !sd.Domestic) return true;
         int now = Math.Max(Math.Abs(e.X - e.HomeX), Math.Abs(e.Y - e.HomeY));

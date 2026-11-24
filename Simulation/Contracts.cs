@@ -18,7 +18,8 @@ public sealed record WorldSnapshot(WorldId WorldId, long Tick, WorldTime Time, I
 public sealed record EntityDetails(WorldId WorldId, EntityId EntityId, long Tick, int LifeState = 0, int SpeciesKey = 0,
     int X = -1, int Y = -1, long BirthTick = 0, long Hunger = 0, long Thirst = 0, long Health = 0,
     long? DeathTick = null, DeathCause DeathCause = DeathCause.None, Sex Sex = Sex.Unspecified, long MotherId = 0, long FatherId = 0,
-    long Age = 0, LifeStage Stage = LifeStage.None, long PregnantUntil = 0);
+    long Age = 0, LifeStage Stage = LifeStage.None, long PregnantUntil = 0, int SettlementId = 0, Job Job = Job.None,
+    ResourceKind CarryKind = 0, int CarryAmount = 0);
 
 /// <summary>
 /// One committed event. Command outcome events use Actor = IssuerId, Target = created EntityId (if any),

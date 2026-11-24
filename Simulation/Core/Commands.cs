@@ -1,6 +1,6 @@
 namespace FantasyWorld.Simulation;
 
-public enum CommandKind { SpawnEntity = 1, TakeResource = 2, SetTerrain = 3 }
+public enum CommandKind { SpawnEntity = 1, TakeResource = 2, SetTerrain = 3, FoundSettlement = 4 }
 
 public static class CommandModes
 {
@@ -32,6 +32,7 @@ public enum CommandReason
     HasResource = 14,
     Occupied = 15,
     WrongDiet = 16,
+    TooClose = 17,
 }
 
 public static class EventKinds
@@ -55,6 +56,16 @@ public static class EventKinds
     public const int Conceived = 206;
     /// <summary>Actor = mother, Target = father: the mother could not afford any child (or the entity cap was reached).</summary>
     public const int BirthFailed = 207;
+    /// <summary>Target = settlement id, Reason = Faction, Amount = farm plots.</summary>
+    public const int SettlementFounded = 210;
+    /// <summary>Actor = member, Target = settlement, Reason = ResourceKind, Amount = units moved into storage.</summary>
+    public const int Deposited = 211;
+    /// <summary>Actor = member, Target = settlement, Amount = crop units taken from a farm plot.</summary>
+    public const int Harvested = 212;
+    /// <summary>Actor = member, Target = settlement, Reason = ResourceKind, Amount = units taken from a wild node.</summary>
+    public const int Gathered = 213;
+    /// <summary>Actor = member who died carrying, Reason = ResourceKind, Amount = units lost (explicit sink).</summary>
+    public const int CarryLost = 214;
     /// <summary>Actor = EntityId, Target = threat id (Flee), X/Y = position, Reason = <see cref="ActionKind"/>.</summary>
     public const int ActionStarted = 300;
     /// <summary>Actor = EntityId, Reason = <see cref="ActionKind"/> whose path search found nothing reachable.</summary>

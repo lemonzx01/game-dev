@@ -49,6 +49,11 @@ public partial class InspectorPanel : Label
         sb.AppendLine($"at {d.X},{d.Y}  hunger {d.Hunger / 10_000}%  thirst {d.Thirst / 10_000}%  health {d.Health / 10_000}%"
             + (d.PregnantUntil != 0 ? $"  pregnant until {d.PregnantUntil}" : ""));
         if (observer.SelectedRow() is { } row) sb.AppendLine($"doing: {(ActionKind)row.Action}{(observer.Following ? "  [following]" : "")}");
+        if (d.SettlementId != 0)
+        {
+            var town = bridge.Settlements()[d.SettlementId - 1];
+            sb.AppendLine($"lives in {town.Name}  job {d.Job}" + (d.CarryAmount > 0 ? $"  carrying {d.CarryAmount} {d.CarryKind}" : ""));
+        }
         if (bridge.Mind(id) is { } m)
         {
             sb.AppendLine($"bravery {m.Bravery}  sociability {m.Sociability}  fear {m.Fear}");

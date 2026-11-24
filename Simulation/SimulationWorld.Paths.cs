@@ -25,7 +25,7 @@ public sealed partial class SimulationWorld
     }
 
     private bool OnCooldown(in MindState m, ActionKind kind, long now) =>
-        (kind == ActionKind.Eat ? m.NoFoodUntil : m.NoWaterUntil) > now;
+        (kind switch { ActionKind.Eat => m.NoFoodUntil, ActionKind.Work => m.NoWorkUntil, _ => m.NoWaterUntil }) > now;
 
     private void ProcessPaths(long now)
     {
@@ -44,7 +44,12 @@ public sealed partial class SimulationWorld
             navigation ??= new Navigation(terrain.Length);
             var path = navigation.FindNearest(terrain, options.MapWidth, options.MapHeight, e.X, e.Y,
                 MindCfg.PerceptionRadius, MindCfg.SearchNodeBudget,
-                cell => request.Kind == ActionKind.Eat ? CanEatAt(e, cell) : CanConsumeAt(cell, ResourceKind.Water), out int expanded);
+                cell => request.Kind switch
+                {
+                    ActionKind.Eat => CanEatAt(e, cell),
+                    ActionKind.Work => IsWorkGoal(e, cell),
+                    _ => CanConsumeAt(cell, ResourceKind.Water),
+                }, out int expanded);
             remaining -= expanded;
             LastPathExpansions += expanded;
             LastPathsServed++;
@@ -52,6 +57,7 @@ public sealed partial class SimulationWorld
             if (path is null)
             {
                 if (request.Kind == ActionKind.Eat) e.Mind.NoFoodUntil = now + MindCfg.UnreachableCooldownTicks;
+                else if (request.Kind == ActionKind.Work) e.Mind.NoWorkUntil = now + TownCfg.WorkCooldownTicks;
                 else e.Mind.NoWaterUntil = now + MindCfg.UnreachableCooldownTicks;
                 Emit(new WorldEvent(0, now, EventKinds.PathFailed, 0, e.Id.Value, 0, e.X, e.Y, (int)request.Kind));
                 FinishAction(e, now);
@@ -66,7 +72,7 @@ public sealed partial class SimulationWorld
     /// <summary>Called when the next path cell became impassable (e.g. God SetTerrain).</summary>
     private void OnPathBlocked(EntityState e, long now)
     {
-        if (e.Mind.Kind is ActionKind.Eat or ActionKind.Drink && e.Mind.Replans < MindCfg.MaxReplans)
+        if (e.Mind.Kind is ActionKind.Eat or ActionKind.Drink or ActionKind.Work && e.Mind.Replans < MindCfg.MaxReplans)
         {
             e.Mind.Replans++;
             RequestPath(e, e.Mind.Kind);

@@ -44,6 +44,7 @@ public partial class EventFeed : Label
         {
             SpawnEntityCommand s => ok ? $"spawned {bridge.SpeciesName(s.SpeciesKey)} #{outcome.Target} at {s.X},{s.Y}" : $"spawn {bridge.SpeciesName(s.SpeciesKey)} at {s.X},{s.Y}",
             SetTerrainCommand t => $"terrain {t.X},{t.Y} -> {t.Terrain}",
+            FoundSettlementCommand f => $"founded {f.Faction} town {f.Name} at {f.X},{f.Y}",
             _ => command.Kind.ToString(),
         };
         return ok ? $"t{outcome.Tick}: God {what}" : $"t{outcome.Tick}: God {what} rejected ({(CommandReason)outcome.Reason})";
@@ -61,6 +62,8 @@ public partial class EventFeed : Label
         EventKinds.EntityBorn => $"t{e.Tick}: {SpeciesOf(e.Target)} #{e.Target} born to #{e.Actor}",
         EventKinds.EntityDied => $"t{e.Tick}: {SpeciesOf(e.Target)} #{e.Target} died ({(DeathCause)e.Reason})" + (e.Actor != 0 ? $" by #{e.Actor}" : ""),
         EventKinds.Attacked => $"t{e.Tick}: #{e.Actor} attacked #{e.Target}",
+        EventKinds.SettlementFounded => $"t{e.Tick}: {(Faction)e.Reason} settlement #{e.Target} founded at {e.X},{e.Y}",
+        EventKinds.CarryLost => $"t{e.Tick}: #{e.Actor} died carrying {e.Amount} {(ResourceKind)e.Reason}",
         EventKinds.EventsDropped => $"t{e.Tick}: {e.Amount} minor events skipped",
         _ => null, // applied commands, eating, drinking, wandering stay out of the feed (inspector shows them)
     };
