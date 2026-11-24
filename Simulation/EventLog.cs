@@ -17,11 +17,12 @@ internal sealed class EventLog
         ring = new WorldEvent[capacity];
     }
 
-    public void Append(long tick, int kind)
+    /// <summary>Appends a copy of <paramref name="entry"/> with the next EventSequence; evicts the oldest when full.</summary>
+    public void Append(in WorldEvent entry)
     {
         long next = checked(NextSequence + 1);
         int slot = (int)(((long)first + count) % Capacity);
-        ring[slot] = new WorldEvent(NextSequence, tick, kind);
+        ring[slot] = entry with { EventSequence = NextSequence };
         if (count == Capacity)
             first = (first + 1) % Capacity;
         else
@@ -56,6 +57,13 @@ internal sealed class EventLog
             writer.Write(entry.EventSequence);
             writer.Write(entry.Tick);
             writer.Write(entry.Kind);
+            writer.Write(entry.CommandSequence);
+            writer.Write(entry.Actor);
+            writer.Write(entry.Target);
+            writer.Write(entry.X);
+            writer.Write(entry.Y);
+            writer.Write(entry.Reason);
+            writer.Write(entry.Amount);
         }
     }
 }

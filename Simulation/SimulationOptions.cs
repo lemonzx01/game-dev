@@ -1,0 +1,49 @@
+using System.Collections.Immutable;
+
+namespace FantasyWorld.Simulation;
+
+/// <summary>
+/// Construction-time configuration. Grants are the only source of trusted authority (N4) and are part of
+/// the hashed/saved world state. Numeric limits are proposed defaults pending measurement (T014).
+/// </summary>
+public sealed record SimulationOptions
+{
+    public required WorldId WorldId { get; init; }
+    public ulong Seed { get; init; }
+    public int MapWidth { get; init; } = 128;
+    public int MapHeight { get; init; } = 128;
+    public int EventCapacity { get; init; } = 4096;
+    /// <summary>Events one tick may emit (N1). Must be ≤ EventCapacity and &gt; CommandQueueCapacity (one slot reserved for the overflow summary).</summary>
+    public int MaxEventsPerTick { get; init; } = 2048;
+    public int CommandQueueCapacity { get; init; } = 1024;
+    /// <summary>Discretionary scheduled work items per tick (a count, never milliseconds).</summary>
+    public int DiscretionaryWorkBudget { get; init; } = 256;
+    public CalendarConfig Calendar { get; init; } = CalendarConfig.Default;
+    public ResourceConfig Resources { get; init; } = ResourceConfig.Default;
+    public ImmutableSortedDictionary<long, AuthorityGrant> Grants { get; init; } = ImmutableSortedDictionary<long, AuthorityGrant>.Empty;
+    /// <summary>Extra world-scope RNG streams to initialize up front (stream 1 = world generation always exists).</summary>
+    public ImmutableArray<uint> PrewarmStreams { get; init; } = [];
+
+    internal void Validate()
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(WorldId.Value, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(MapWidth, 8);
+        ArgumentOutOfRangeException.ThrowIfLessThan(MapHeight, 8);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(MapWidth, 4096);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(MapHeight, 4096);
+        ArgumentOutOfRangeException.ThrowIfLessThan(EventCapacity, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(MaxEventsPerTick, EventCapacity);
+        ArgumentOutOfRangeException.ThrowIfNegative(CommandQueueCapacity);
+        if (MaxEventsPerTick < CommandQueueCapacity + 1)
+            throw new ArgumentException("MaxEventsPerTick must exceed CommandQueueCapacity so command outcomes are never dropped (N1).");
+        ArgumentOutOfRangeException.ThrowIfLessThan(DiscretionaryWorkBudget, 1);
+        Calendar.Validate();
+        Resources.Validate();
+        foreach (var (issuer, grant) in Grants)
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(issuer, 1);
+            if ((grant & ~(AuthorityGrant.Observe | AuthorityGrant.God)) != 0)
+                throw new ArgumentException($"Unknown grant bits for issuer {issuer}.");
+        }
+    }
+}

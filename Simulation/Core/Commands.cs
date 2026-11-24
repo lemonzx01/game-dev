@@ -1,0 +1,59 @@
+namespace FantasyWorld.Simulation;
+
+public enum CommandKind { SpawnEntity = 1, TakeResource = 2 }
+
+public static class CommandModes
+{
+    public const string Observer = "Observer";
+    public const string God = "God";
+}
+
+/// <summary>Trusted session grants. Supplied only through <see cref="SimulationOptions.Grants"/> (N4), never by a command.</summary>
+[Flags]
+public enum AuthorityGrant { None = 0, Observe = 1, God = 2 }
+
+/// <summary>Stable numeric reason codes; values are part of the event/hash schema.</summary>
+public enum CommandReason
+{
+    None = 0,
+    InvalidWorld = 1,
+    InvalidCommand = 2,
+    InvalidMode = 3,
+    Unauthorized = 4,
+    QueueFull = 5,
+    OutOfBounds = 6,
+    Impassable = 7,
+    NoResource = 8,
+    InsufficientStock = 9,
+    InvalidAmount = 10,
+}
+
+public static class EventKinds
+{
+    public const int CommandApplied = 100;
+    public const int CommandRejected = 101;
+    /// <summary>Summary of system events that exceeded the per-tick cap (Amount = dropped count).</summary>
+    public const int EventsDropped = 199;
+}
+
+public static class LifeStates
+{
+    public const int Alive = 1;
+    public const int Dead = 2;
+}
+
+/// <summary>God tool: create an entity on a passable tile. Full components arrive in T004.</summary>
+public sealed record SpawnEntityCommand(WorldId WorldId, long IssuerId, string Mode, int X, int Y, int SpeciesKey)
+    : GameCommand(WorldId, IssuerId, Mode)
+{
+    public override CommandKind Kind => CommandKind.SpawnEntity;
+}
+
+/// <summary>God tool: remove resource units from a tile (explicit sink). Fails if stock is insufficient at execution.</summary>
+public sealed record TakeResourceCommand(WorldId WorldId, long IssuerId, string Mode, int X, int Y, ResourceKind Resource, int Amount)
+    : GameCommand(WorldId, IssuerId, Mode)
+{
+    public override CommandKind Kind => CommandKind.TakeResource;
+}
+
+internal readonly record struct QueuedCommand(long Sequence, long TargetTick, GameCommand Command);

@@ -3,16 +3,17 @@ using System.Diagnostics;
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
 
-var cases = new (string Name, Action Run)[]
-{
+(string Name, Action Run)[] cases =
+[
     ("Pure simulation assembly", PureAssembly),
     ("A007 RNG vector", RngVector),
     ("Monotonic identity and checked exhaustion", Identity),
     ("Stable canonical hash and process replay", Replay),
     ("Paged events and explicit gap", Events),
     ("Owner-thread and re-entry guards", Guards),
-    ("Snapshot lifetime", Snapshots)
-};
+    ("Snapshot lifetime", Snapshots),
+    .. T003Tests.Cases
+];
 int failures = 0;
 foreach (var test in cases)
 {
@@ -27,7 +28,7 @@ foreach (var test in cases)
         Console.Error.WriteLine($"FAIL {test.Name}: {ex}");
     }
 }
-Console.WriteLine($"{cases.Length - failures}/{cases.Length} T002 test groups passed");
+Console.WriteLine($"{cases.Length - failures}/{cases.Length} test groups passed");
 return failures == 0 ? 0 : 1;
 
 static void Check(bool ok, string message)
@@ -101,7 +102,7 @@ static void Replay()
     var baseline = RunHost("42", false);
     Check(baseline.Length == 100 && baseline.SequenceEqual(RunHost("42", true)), "per-tick replay mismatch");
     Check(!baseline.SequenceEqual(RunHost("43", false)), "seed had no effect");
-    Check(baseline[0] == "1 480C1B5668F5FF4B9A67A359E6AD9235F00C688E7CBC86E16A7FC94C09805D4B", "schema 1 canonical byte order");
+    Check(baseline[0] == "1 99FC6F6738275732C2B907694319AB0004180485FB34CE23BBC974EA36303F4B", "schema 2 canonical byte order");
 }
 
 static void Events()
