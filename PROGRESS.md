@@ -2,11 +2,15 @@
 
 ## Current state
 
-**T001 · ARCHITECTURE APPROVED · A007 ACCEPTED (owner 2026-11-24) · BLOCKED (ยังไม่มี project ให้ build)** — ติดตั้ง .NET SDK 10.0.404 และ Godot 4.7.2 .NET แล้ว (ดู handoff ล่าสุด) แต่ยังไม่มี build จริง T002 อยู่ใน TODO
-
-ข้อกำหนดที่ยกไปจากรีวิว: N1+N4 → T003, N2 → T013, N3 → Antigravity ก่อน T007, acceptance tests 9 ข้อ → T002 (ดู TASKS.md "Requirements carried from T001 review") ไม่มีข้อใด implement หรือทดสอบแล้ว
+T001 DONE. A007 revision 2 Accepted. T002 authorized after this gate.
 
 ## Handoff log
+
+**2026-11-24 | Codex | T001 DONE | feat/T001-simulation-contract | base 58c398e**
+
+ตรวจ dotnet --list-sdks ได้ 10.0.404 (Windows x64), godot-mono --headless --version ได้ 4.7.2.stable.mono.official.ed1daf0bf ใช้ global.json pin SDK และใช้ Godot .NET SDK 4.7.2 ฝั่ง Game ตัวสร้างโปรเจกต์จริง GodotTools.ProjectEditor.ProjectGenerator.GenAndSaveGameProject ให้ desktop TargetFramework=net8.0 (android override net9.0) ไม่มีการติดตั้งเพิ่มหรือเปลี่ยน system PATH
+
+ใน obj/toolchain-check ทดสอบ dotnet build Simulation/Simulation.csproj -c Release และ dotnet build Game/Game.csproj -c Debug ด้วย local NuGet cache, Game ใช้ ProjectReference ไปยัง Simulation ผ่านทั้งคู่ 0 warnings / 0 errors ตรวจ AssemblyRef ของ Simulation.dll ด้วย PEReader พบ System.Runtime เท่านั้น เป็น project ชั่วคราวสำหรับ gate ไม่ใช่ source ของ T002 การลองรันฉากเสริมก่อนหน้านี้ใน sandbox ล้มเหลวด้วย Assemblies not found จึงยังไม่อ้างผล Godot runtime integration
 
 **2026-11-24 | Claude Code | T001 environment install | feat/T001-simulation-contract**
 

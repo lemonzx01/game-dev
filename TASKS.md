@@ -1,10 +1,10 @@
 # Task board — initial state
 
-T001 architecture is APPROVED and A007 rev 2 is Accepted by owner (2026-11-24); T001 is BLOCKED on environment (no .NET SDK / Godot .NET). Unrun acceptance tests are recorded in PROGRESS.md. Remaining tasks are TODO. No code has been inspected or implemented by this document creation. Owner selects one task at a time per agent. Must = minimum target; Should/Stretch are optional if schedule permits. A task may be split into smaller changes.
+T001 is DONE. A007 revision 2 is Accepted. See PROGRESS.md for verified toolchain and build evidence.
 
 | ID | Priority | Default owner | Task | Depends | Acceptance (summary) | Status |
 |---|---|---|---|---|---|---|
-| T001 | Must | Codex + Claude review | Verify toolchain, solution layout, agree contracts | — | actual version/build commands, contract signatures recorded, no Godot reference in Simulation | BLOCKED (environment) |
+| T001 | Must | Codex + Claude review | Verify toolchain, solution layout, agree contracts | — | actual version/build commands, contract signatures recorded, no Godot reference in Simulation | DONE |
 | T002 | Must | Codex | Headless runner, test project, seeded RNG, IDs | T001 | build + same seed produces same baseline output; all 9 T002 acceptance tests below | TODO |
 | T003 | Must | Codex | World clock, grid map, resources, commands, tick scheduler | T002 | deterministic map, pause/step, invalid commands rejected; N1 + N4 below | TODO |
 | T004 | Must | Codex | Entity state, needs, health, death | T003 | food/water consumption, elapsed time, no dead actions, no negative stock | TODO |
