@@ -364,6 +364,19 @@ public sealed partial class SimulationWorld : ISimulation
 
     public int ResourceNodeCount { get { CheckAccess(); return resources.Count; } }
 
+    /// <summary>All resource nodes with their current stock (read model for renderers; ascending cell, then kind).</summary>
+    public IReadOnlyList<ResourceView> ReadResourceNodes()
+    {
+        CheckAccess();
+        var list = new List<ResourceView>(resources.Count);
+        for (int i = 0; i < resources.Count; i++)
+        {
+            var n = resources[i];
+            list.Add(new ResourceView(n.Cell % options.MapWidth, n.Cell / options.MapWidth, n.Kind, n.Amount, resources.Config.RuleFor(n.Kind).Capacity));
+        }
+        return list;
+    }
+
     public EventPage ReadEvents(long afterSequence, int limit)
     {
         CheckAccess();

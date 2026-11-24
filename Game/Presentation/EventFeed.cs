@@ -17,7 +17,11 @@ public partial class EventFeed : Label
 
     public IReadOnlyCollection<string> Lines => lines;
 
-    public override void _Ready() => bridge = GetNode<SimulationBridge>(BridgePath);
+    public override void _Ready()
+    {
+        bridge = GetNode<SimulationBridge>(BridgePath);
+        UiStyle.Panel(this, 13);
+    }
 
     public override void _Process(double delta)
     {

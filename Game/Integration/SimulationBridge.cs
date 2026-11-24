@@ -246,5 +246,9 @@ public partial class SimulationBridge : Node
 
     public System.Collections.Generic.IReadOnlyList<(int X, int Y, int Crop)> FarmPlots(int id) => simulation.ReadFarmPlots(id);
 
+    public System.Collections.Generic.IReadOnlyList<ResourceView> ResourceNodes() => simulation.ReadResourceNodes();
+
+    public int TicksPerDay => simulation.Options.Calendar.TicksPerDay;
+
     public string SpeciesName(int key) => Species.TryGetValue(key, out var d) ? d.Name : $"Species {key}";
 }

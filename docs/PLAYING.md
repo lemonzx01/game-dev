@@ -9,7 +9,7 @@
   This needs the Godot 4.7.2 .NET export templates in `%USERPROFILE%\scoop\apps\godot-mono\current\editor_data\export_templates\4.7.2.stable.mono` (installed 2026-11-24 from the official `Godot_v4.7.2-stable_mono_export_templates.tpz`, SHA-512 verified) and `Game/Game.sln` (the .NET exporter requires a solution). `build/` is git-ignored.
 
 ## What you see
-A 128×128 world generated from seed 1 with 120 animals (deer brown, sheep white, rabbit tan, wolf dark). They eat, drink, rest, flee, hunt, breed, age and die on their own; seasons change the plants. The top line shows year, season, day and tick.
+A 128×128 pixel-art world generated from seed 1 (placeholder art, `Assets/CREDITS.md`) with 120 animals and two towns: Ashford (humans, blue tunics) and Cinderhold (demons, red skin and horns). The camera starts close to Ashford; zoom out with the mouse wheel. Day and night follow the simulation clock. They eat, drink, rest, flee, hunt, breed, age and die on their own; seasons change the plants. The top line shows year, season, day and tick.
 
 ## Controls
 | Key / mouse | Action |
@@ -21,6 +21,7 @@ A 128×128 world generated from seed 1 with 120 animals (deer brown, sheep white
 | Left click | Select the animal under the cursor (inspector: vitals, action, personality, fear, memories, bonds; dead animals keep their history) |
 | F | Follow the selected animal |
 | Esc | Clear selection |
+| F3 | Show/hide technical details (tick, entities, event cursor, backlog) |
 | G | God mode on/off |
 | Q / W (God mode) | Spawn tool / terrain brush |
 | Tab (God mode) | Next species / next terrain |
