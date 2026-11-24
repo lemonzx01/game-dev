@@ -39,6 +39,13 @@ public partial class SimulationBridge : Node
     public double BacklogSeconds => (double)Clock.Backlog / TicksPerSecond;
     public (long From, long Through)? LastGap { get; private set; }
     public ImmutableSortedDictionary<int, SpeciesDef> Species => SpeciesCatalog.Default;
+    /// <summary>Bumped whenever the terrain view changes (God terrain edits, load) so the renderer rebuilds its texture.</summary>
+    public int MapRevision { get; private set; }
+    /// <summary>Bumped when the whole world is replaced by a load; observers drop selections and caches.</summary>
+    public int WorldGeneration { get; private set; }
+    /// <summary>Outcomes of commands the player issued this frame (sequence → event), for the feed.</summary>
+    public ImmutableArray<(GameCommand Command, WorldEvent Outcome)> PlayerOutcomesThisFrame { get; private set; } = [];
+    private readonly System.Collections.Generic.Dictionary<long, GameCommand> playerCommands = new(); // lookup by sequence only
 
     public override void _Ready()
     {
@@ -93,6 +100,68 @@ public partial class SimulationBridge : Node
             Snapshot = simulation.ReadSnapshot();
         }
         DrainEvents();
+        ReportPlayerOutcomes();
+    }
+
+    // Matches drained outcome events to commands the player issued; refreshes the map after applied terrain edits.
+    private void ReportPlayerOutcomes()
+    {
+        if (playerCommands.Count == 0) { PlayerOutcomesThisFrame = []; return; }
+        var found = ImmutableArray.CreateBuilder<(GameCommand, WorldEvent)>();
+        foreach (var e in EventsThisFrame)
+        {
+            if (e.Kind is not (EventKinds.CommandApplied or EventKinds.CommandRejected) || !playerCommands.Remove(e.CommandSequence, out var command))
+                continue;
+            found.Add((command, e));
+            if (command is SetTerrainCommand && e.Kind == EventKinds.CommandApplied) RefreshMap();
+        }
+        PlayerOutcomesThisFrame = found.ToImmutable();
+    }
+
+    private void RefreshMap()
+    {
+        Map = simulation.ReadMap();
+        MapRevision++;
+    }
+
+    // ---- God tools: the player acts only through ordinary, validated God commands ----
+
+    public CommandReceipt SpawnAt(int x, int y, int species) =>
+        Submit(new SpawnEntityCommand(World, ScenarioAuthor, CommandModes.God, x, y, species));
+
+    public CommandReceipt PaintTerrain(int x, int y, Terrain terrain) =>
+        Submit(new SetTerrainCommand(World, ScenarioAuthor, CommandModes.God, x, y, terrain));
+
+    private CommandReceipt Submit(GameCommand command)
+    {
+        var receipt = simulation.SubmitCommand(command);
+        if (receipt.CommandSequence is long sequence) playerCommands[sequence] = command;
+        return receipt;
+    }
+
+    // ---- Save / load (between frames on the owner thread; never inside Step) ----
+
+    public static string QuickSavePath => ProjectSettings.GlobalizePath("user://saves/quicksave.fws");
+
+    public void SaveTo(string path)
+    {
+        System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
+        SaveFiles.Write(simulation, path); // temp + verify + replace with .bak
+    }
+
+    /// <summary>Replaces the world with a saved one. Pending receipts, cursors and caches of the old world are dropped (A007 §3).</summary>
+    public void LoadFrom(string path)
+    {
+        var loaded = SaveFiles.Read(path); // throws SaveFormatException and leaves the current world untouched on failure
+        simulation = loaded;
+        playerCommands.Clear();
+        eventCursor = simulation.ReadEvents(0, 1).LatestSequence; // old events belong to the replaced timeline view
+        PreviousSnapshot = Snapshot = simulation.ReadSnapshot();
+        EventsThisFrame = [];
+        PlayerOutcomesThisFrame = [];
+        LastGap = null;
+        RefreshMap();
+        WorldGeneration++;
     }
 
     private void DrainEvents()

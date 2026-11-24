@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://Integration/SimulationBridge.cs" id="1_bridge"]
 [ext_resource type="Script" path="res://Presentation/CameraController.cs" id="2_camera"]
@@ -7,6 +7,7 @@
 [ext_resource type="Script" path="res://Presentation/ObserverController.cs" id="5_observer"]
 [ext_resource type="Script" path="res://Presentation/InspectorPanel.cs" id="6_inspector"]
 [ext_resource type="Script" path="res://Presentation/EventFeed.cs" id="7_feed"]
+[ext_resource type="Script" path="res://Presentation/GodTools.cs" id="8_god"]
 
 [node name="Main" type="Node2D"]
 
@@ -24,6 +25,9 @@ BridgePath = NodePath("../SimulationBridge")
 
 [node name="Observer" type="Node2D" parent="."]
 script = ExtResource("5_observer")
+
+[node name="GodTools" type="Node2D" parent="."]
+script = ExtResource("8_god")
 
 [node name="UI" type="CanvasLayer" parent="."]
 
@@ -54,3 +58,12 @@ offset_right = -12.0
 offset_bottom = -12.0
 vertical_alignment = 2
 script = ExtResource("7_feed")
+
+[node name="GodLabel" type="Label" parent="UI"]
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = -40.0
+offset_right = 760.0
+offset_bottom = -12.0

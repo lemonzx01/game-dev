@@ -36,19 +36,7 @@ public partial class MapRenderer : Node2D
         bridge = GetNode<SimulationBridge>(BridgePath);
         observer = GetNodeOrNull<ObserverController>(ObserverPath);
         var map = bridge.Map;
-        using var image = Image.CreateEmpty(map.Width, map.Height, false, Image.Format.Rgb8);
-        for (int y = 0; y < map.Height; y++)
-            for (int x = 0; x < map.Width; x++)
-                image.SetPixel(x, y, map.At(x, y) switch
-                {
-                    Terrain.Water => new Color("3b7494"),
-                    Terrain.Grass => new Color("96ad63"),
-                    Terrain.Forest => new Color("446849"),
-                    Terrain.Mountain => new Color("807b74"),
-                    Terrain.Snow => new Color("dce5df"),
-                    _ => throw new System.InvalidOperationException("Unknown terrain")
-                });
-        terrain = ImageTexture.CreateFromImage(image);
+        BuildTerrain();
         TextureFilter = TextureFilterEnum.Nearest;
         var camera = GetViewport().GetCamera2D()!;
         camera.Position = new Vector2(map.Width, map.Height) * CellSize / 2;
@@ -57,8 +45,35 @@ public partial class MapRenderer : Node2D
         camera.Zoom = Vector2.One * Mathf.Clamp(fit, 0.25f, 4f); // start with the whole map in view
     }
 
+    private int builtRevision = -1;
+
+    public static Color TerrainColor(Terrain t) => t switch
+    {
+        Terrain.Water => new Color("3b7494"),
+        Terrain.Grass => new Color("96ad63"),
+        Terrain.Forest => new Color("446849"),
+        Terrain.Mountain => new Color("807b74"),
+        Terrain.Snow => new Color("dce5df"),
+        _ => throw new System.InvalidOperationException("Unknown terrain")
+    };
+
+    // Rebuilds the terrain texture from the bridge's current map (start, God terrain edits, load).
+    private void BuildTerrain()
+    {
+        var map = bridge.Map;
+        using var image = Image.CreateEmpty(map.Width, map.Height, false, Image.Format.Rgb8);
+        for (int y = 0; y < map.Height; y++)
+            for (int x = 0; x < map.Width; x++)
+                image.SetPixel(x, y, TerrainColor(map.At(x, y)));
+        terrain = ImageTexture.CreateFromImage(image);
+        builtRevision = bridge.MapRevision;
+    }
+
+    public int BuiltRevision => builtRevision;
+
     public override void _Process(double delta)
     {
+        if (builtRevision != bridge.MapRevision) BuildTerrain();
         if (!ReferenceEquals(lastDrawn, bridge.Snapshot) || observer is not null) QueueRedraw(); // selection outline follows input
     }
 
