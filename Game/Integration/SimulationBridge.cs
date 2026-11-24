@@ -240,6 +240,8 @@ public partial class SimulationBridge : Node
 
     public EntityMindView? Mind(long id) => simulation.ReadEntityMind(World, new EntityId(id));
 
+    public SkillsView? Skills(long id) => simulation.ReadSkills(World, new EntityId(id));
+
     public HistoryPage History(long after, int limit) => simulation.ReadHistory(after, limit);
 
     public System.Collections.Generic.IReadOnlyList<SettlementView> Settlements() => simulation.ReadSettlements();

@@ -22,6 +22,9 @@ internal sealed class EntityState
     public int CarryAmount;
     public int TradePartner;           // settlement id the trader is selling to (0 = none)
     public bool OnTrip;                // counted in the home settlement's TradersOut
+    public readonly long[] Skills = new long[6];             // XP per Skill (index = Skill − 1)
+    public readonly List<ReadingProgress> Reading = new();   // pages read per book
+    public long ReadingBook, ReadingSince;                   // open reading session (0 = none)
     public long BirthTick;
     public VitalsAnchor Vitals;
     public long ScheduledDeathTick = long.MaxValue; // only the item due at this tick is live; older items are stale
@@ -248,6 +251,7 @@ public sealed partial class SimulationWorld
             writer.Write(e.CarryAmount);
             writer.Write(e.TradePartner);
             writer.Write(e.OnTrip);
+            WriteSkills(writer, e);
         }
         writer.Write((uint)deaths.Count);
         foreach (var r in deaths)

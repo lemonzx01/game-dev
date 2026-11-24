@@ -74,6 +74,10 @@ public static class EventKinds
     public const int TradePaid = 217;
     /// <summary>Actor = guard, Target = intruder, Reason = settlement id.</summary>
     public const int GuardAlert = 218;
+    /// <summary>Actor = entity, Reason = Skill, Amount = new level.</summary>
+    public const int SkillLevelUp = 220;
+    /// <summary>Actor = reader, Target = book key, Reason = 1 if finished, Amount = pages credited (new pages only).</summary>
+    public const int ReadProgress = 221;
     /// <summary>Actor = EntityId, Target = threat id (Flee), X/Y = position, Reason = <see cref="ActionKind"/>.</summary>
     public const int ActionStarted = 300;
     /// <summary>Actor = EntityId, Reason = <see cref="ActionKind"/> whose path search found nothing reachable.</summary>

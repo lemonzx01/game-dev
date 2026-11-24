@@ -99,6 +99,7 @@ public sealed partial class SimulationWorld
         e.CarryAmount -= units;
         if (e.CarryAmount == 0) e.CarryKind = 0;
         Emit(new WorldEvent(0, now, EventKinds.TradeSold, 0, e.Id.Value, partner.Id, partner.X, partner.Y, (int)kind, units));
+        GainXp(e, Skill.Trading, (long)units * SkillCfg.XpPerTradeUnit, now);
         Emit(new WorldEvent(0, now, EventKinds.TradePaid, 0, partner.Id, home.Id, partner.X, partner.Y, price, pay));
     }
 
