@@ -2,7 +2,7 @@
 
 T001 and T002 are DONE. A007 revision 2 is Accepted. Any agent may take any unclaimed task (AGENTS.md, A008). Claims live in branches + `docs/handoffs/<TASK_ID>.md`; `scripts/agent-status.ps1` shows them. See PROGRESS.md for evidence.
 
-**2026-11-24:** T003–T007 and T009–T013 merged to main by owner instruction **without independent review** (all automated acceptance tests pass: 67/67 simulation groups + Godot acceptance). A later review by another agent is still recommended; findings go to new fix branches. Handoffs: docs/handoffs/T0xx.md.
+**2026-11-24:** T003–T014 merged to main by owner instruction **without independent review** (all automated acceptance tests pass: 67/67 simulation groups + Godot acceptance). A later review by another agent is still recommended; findings go to new fix branches. Handoffs: docs/handoffs/T0xx.md.
 
 | ID | Priority | Task | Depends | Acceptance (summary) | Status |
 |---|---|---|---|---|---|
@@ -13,13 +13,13 @@ T001 and T002 are DONE. A007 revision 2 is Accepted. Any agent may take any uncl
 | T005 | Must | Utility AI and action lifecycle | T004 | hunger selects reachable food, rest and flee feasible, interrupt, no rapid oscillation | DONE (merged, 7f432b3) |
 | T006 | Must | Spatial grid and bounded movement/pathfinding | T003,T005 | nearby results correct, blocked path handled, request budget enforced | DONE (merged, f4b2267) |
 | T007 | Must | Godot project, map renderer, camera, simulation bridge | T001; N3 (done); integrate T003 | actual snapshots displayed, camera/input independent of state, placeholders allowed; events via ReadEvents cursor (N3) | DONE (merged, cb7d30f) |
-| T008 | Must | Observer UI, pause/speed, selection, follow, event feed | T005,T007 | inspect and follow any living entity; tracking doesn't affect sim; dead history retained | TODO |
+| T008 | Must | Observer UI, pause/speed, selection, follow, event feed | T005,T007 | inspect and follow any living entity; tracking doesn't affect sim; dead history retained | DONE (merged, a51f0be) |
 | T009 | Must | Species data + predator/prey + resources | T004–T006 | 3–5 species including farm/wild animal and predator, kills consume/transfer real resources | DONE (merged, a7719e0) |
 | T010 | Must | Basic personality/emotions/memory | T005,T009 | two personalities can choose differently under defined inputs; danger event changes emotion; verify per-entity memory/relationship caps, eviction and durable history (Architecture §9) | DONE (merged, 5cb3116) |
 | T011 | Must | Basic birth and ageing/death | T009 | new ID, valid parents/age, capped reproduction/resource checks | DONE (merged, e11b64b) |
 | T012 | Should | Seasons, temperature and resource growth | T003,T009 | predictable season progression; seasonal growth differs; UI reports season | DONE (merged, 3959c5e) |
 | T013 | Must | Versioned save/load | T003 onward | state, pending action, RNG and time roundtrip; malformed save rejected; replay continuation test; N2 below | DONE (merged, 6226e68) |
-| T014 | Must | Profiling, correctness, optimization | T006–T013 (applicable) | measured scenarios 100+ entities; attempt 1,000 if stable; document bottlenecks and no regressions; independent review (not the author) | TODO |
+| T014 | Must | Profiling, correctness, optimization | T006–T013 (applicable) | measured scenarios 100+ entities; attempt 1,000 if stable; document bottlenecks and no regressions; independent review (not the author) | DONE (merged, 348af0c; independent review still pending) |
 | T015 | Should | Two settlements, humans/demons, farm/storage/jobs | T009,T010 | stock conservation, production/consumption and display; no inherent good/evil rule | TODO |
 | T016 | Should | Basic trade and guards | T015 | seller loses stock and receives payment, buyer inverse; guard responds to threat | TODO |
 | T017 | Should | Skills and reading | T005,T010 | gains from activities; interrupted read awards actual progress, no duplicate XP | TODO |

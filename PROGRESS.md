@@ -2,9 +2,14 @@
 
 ## Current state
 
-T001–T007 and T009–T013 DONE and merged to main (2026-11-24, owner-approved merge without independent review). Main verified: `dotnet test Tests/Simulation.Tests -c Release -m:1` → 67/67 groups; `dotnet build Game/Game.csproj` and Sandbox build succeed; Godot headless acceptance `T007_ACCEPTANCE_PASS`. Next: T008 observer UI, T014 profiling, then T015+.
+T001–T014 DONE and merged to main (2026-11-24; T003–T014 merged by owner instruction without independent review). Main verified: simulation suite 68/68, Godot acceptance T007 + T008 pass, Game/Sandbox/Benchmarks build. Performance baseline: docs/PERFORMANCE.md (1,000 animals p99 ≈ 3–4 ms/tick). Remaining roadmap: T015 settlements, T016 trade/guards, T017 skills/reading, T018 playtest/build, T019–T020 stretch.
 
 ## Handoff log
+
+**2026-11-24 | Claude Code (owner-requested) | T008 + T014 | main | DONE**
+
+- T008 observer UI (pause/speed/step, select, follow, inspector with dead history, event feed, 120-animal starter herd): Godot headless `T008_ACCEPTANCE_PASS`; T007 acceptance still passes. Handoff docs/handoffs/T008.md.
+- T014 profiling: benchmark harness and docs/PERFORMANCE.md; fixed stale decisions consuming the budget and a T013 load rejection of carried-over decisions (regression test); allocations −75 %. 68/68 tests. Handoff docs/handoffs/T014.md. Independent review still recommended.
 
 **2026-11-24 | Claude Code (owner-requested integration) | merge T003–T013 + T007 | main | DONE**
 
