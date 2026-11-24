@@ -49,6 +49,12 @@ public static class EventKinds
     public const int Attacked = 203;
     /// <summary>X/Y = carcass tile, Amount = meat removed by decay (explicit sink).</summary>
     public const int CarcassDecayed = 204;
+    /// <summary>Actor = mother, Target = child, Amount = father id. Durable milestone.</summary>
+    public const int EntityBorn = 205;
+    /// <summary>Actor = mother, Target = father.</summary>
+    public const int Conceived = 206;
+    /// <summary>Actor = mother, Target = father: the mother could not afford any child (or the entity cap was reached).</summary>
+    public const int BirthFailed = 207;
     /// <summary>Actor = EntityId, Target = threat id (Flee), X/Y = position, Reason = <see cref="ActionKind"/>.</summary>
     public const int ActionStarted = 300;
     /// <summary>Actor = EntityId, Reason = <see cref="ActionKind"/> whose path search found nothing reachable.</summary>
@@ -62,7 +68,7 @@ public static class LifeStates
 }
 
 /// <summary>God tool: create an entity on a passable tile. Full components arrive in T004.</summary>
-public sealed record SpawnEntityCommand(WorldId WorldId, long IssuerId, string Mode, int X, int Y, int SpeciesKey)
+public sealed record SpawnEntityCommand(WorldId WorldId, long IssuerId, string Mode, int X, int Y, int SpeciesKey, Sex Sex = Sex.Unspecified)
     : GameCommand(WorldId, IssuerId, Mode)
 {
     public override CommandKind Kind => CommandKind.SpawnEntity;

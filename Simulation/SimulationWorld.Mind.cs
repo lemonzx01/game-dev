@@ -157,7 +157,7 @@ public sealed partial class SimulationWorld
 
         var v = e.Vitals.At(now, options.Vitals);
         long fatigue = FatigueAt(e.Mind, now);
-        Span<(int Score, ActionKind Kind)> candidates = stackalloc (int, ActionKind)[6];
+        Span<(int Score, ActionKind Kind)> candidates = stackalloc (int, ActionKind)[7];
         int n = 0;
         if (threat is not null)
             candidates[n++] = (2000 + (cfg.PerceptionRadius * 2 - distance) * 50, ActionKind.Flee);
@@ -168,6 +168,9 @@ public sealed partial class SimulationWorld
         // Predators hunt only when hungry; a reachable carcass (Eat) is preferred by one point.
         if ((SpeciesOf(e)?.Hunts.Length ?? 0) > 0 && (v.Hunger >= cfg.EatStartNeed || current == ActionKind.Hunt))
             candidates[n++] = ((int)(v.Hunger / 1_000) - 1, ActionKind.Hunt);
+        // Reproduction only when safe and needs are low (MateFor checks vitals, stage, caps and a mate in sight).
+        if (threat is null && (current == ActionKind.Mate || MateFor(e, now) is not null))
+            candidates[n++] = (400, ActionKind.Mate);
         if (threat is null && (fatigue >= cfg.RestStartFatigue || current == ActionKind.Rest))
             candidates[n++] = ((int)(fatigue * 9 / 10_000), ActionKind.Rest);
         candidates[n++] = (50, ActionKind.Wander);
@@ -198,8 +201,12 @@ public sealed partial class SimulationWorld
                 if (threat is null || FleeStep(e, threat) < 0) return false;
                 break;
             case ActionKind.Hunt:
-                if (e.Mind.NoHuntUntil > now || NearestPrey(e) is not { } prey) return false;
+                if (e.Mind.NoHuntUntil > now || StageOf(e, now) == LifeStage.Juvenile || NearestPrey(e) is not { } prey) return false;
                 huntTarget = prey.Id.Value;
+                break;
+            case ActionKind.Mate:
+                if (MateFor(e, now) is not { } mate) return false;
+                huntTarget = mate.Id.Value;
                 break;
             case ActionKind.Wander:
                 wanderCell = WanderStep(e);
@@ -212,8 +219,8 @@ public sealed partial class SimulationWorld
         e.Action = (int)kind;
         e.Mind.Path = kind == ActionKind.Wander ? [wanderCell] : path;
         e.Mind.PathIndex = 0;
-        e.Mind.TargetEntity = kind == ActionKind.Hunt ? huntTarget : threat?.Id.Value ?? 0;
-        e.Mind.HuntUntil = now + options.Ecology.HuntGiveUpTicks;
+        e.Mind.TargetEntity = kind is ActionKind.Hunt or ActionKind.Mate ? huntTarget : threat?.Id.Value ?? 0;
+        e.Mind.HuntUntil = now + (kind == ActionKind.Mate ? options.Ecology.MateGiveUpTicks : options.Ecology.HuntGiveUpTicks);
         e.Mind.AttackReadyTick = now;
         e.Mind.FleeStepsDone = 0;
         e.Mind.Replans = 0;
@@ -266,6 +273,9 @@ public sealed partial class SimulationWorld
                 return;
             case ActionKind.Hunt:
                 HuntStep(e, now);
+                return;
+            case ActionKind.Mate:
+                MateStep(e, now);
                 return;
             case ActionKind.Flee:
                 var threat = FindLive(e.Mind.TargetEntity) is int ti and >= 0 ? entities[ti] : null;

@@ -54,6 +54,7 @@ public sealed partial class SimulationWorld : ISimulation
         map = new MapView(options.MapWidth, options.MapHeight, ImmutableArray.Create(terrain));
         grid = new SpatialGrid(options.MapWidth, options.MapHeight);
         streams.Add(AiStream, new RandomStream(options.Seed, AiStream, 0));
+        streams.Add(EcologyStream, new RandomStream(options.Seed, EcologyStream, 0));
 
         // Prewarm is part of the baseline configuration; insertion order must not affect the hash.
         foreach (uint tag in options.PrewarmStreams)
@@ -162,7 +163,7 @@ public sealed partial class SimulationWorld : ISimulation
         return command switch
         {
             SpawnEntityCommand s => !InBounds(s.X, s.Y) ? CommandReason.OutOfBounds
-                : s.SpeciesKey < 1 ? CommandReason.InvalidCommand : CommandReason.None,
+                : s.SpeciesKey < 1 || !Enum.IsDefined(s.Sex) ? CommandReason.InvalidCommand : CommandReason.None,
             TakeResourceCommand t => !InBounds(t.X, t.Y) ? CommandReason.OutOfBounds
                 : !Enum.IsDefined(t.Resource) ? CommandReason.InvalidCommand
                 : t.Amount < 1 ? CommandReason.InvalidAmount : CommandReason.None,
@@ -198,7 +199,7 @@ public sealed partial class SimulationWorld : ISimulation
                         reason = CommandReason.Impassable;
                         break;
                     }
-                    created = SpawnEntity(s.X, s.Y, s.SpeciesKey, now);
+                    created = SpawnEntity(s.X, s.Y, s.SpeciesKey, now, s.Sex);
                     break;
                 case TakeResourceCommand t:
                     int node = resources.Find(Cell(t.X, t.Y), t.Resource);
@@ -254,6 +255,12 @@ public sealed partial class SimulationWorld : ISimulation
                 break;
             case WorkKind.EntityDeath:
                 RunDeath(item.Subject, now);
+                break;
+            case WorkKind.OldAge:
+                RunOldAge(item, now);
+                break;
+            case WorkKind.Birth:
+                RunBirth(item, now);
                 break;
             case WorkKind.CarcassDecay:
                 RunDecay(item, now);
@@ -331,7 +338,7 @@ public sealed partial class SimulationWorld : ISimulation
         using var bytes = new MemoryStream();
         using var writer = new BinaryWriter(bytes);
         // 1. Versions, identity, configuration, clock.
-        writer.Write(6u); // schema
+        writer.Write(7u); // schema
         writer.Write(1u); // RNG version
         writer.Write(worldId.Value);
         writer.Write(options.Seed);
@@ -360,7 +367,9 @@ public sealed partial class SimulationWorld : ISimulation
             writer.Write(v);
         options.Mind.WriteCanonical(writer);
         SpeciesCatalog.WriteCanonical(writer, options.Species);
-        foreach (int v in new[] { options.Ecology.CarcassDecayTicks, options.Ecology.AttackIntervalTicks, options.Ecology.HuntGiveUpTicks, options.Ecology.HuntCooldownTicks })
+        var eco = options.Ecology;
+        foreach (long v in new long[] { eco.CarcassDecayTicks, eco.AttackIntervalTicks, eco.HuntGiveUpTicks, eco.HuntCooldownTicks,
+                     eco.MaxEntities, eco.LifespanJitterPercent, eco.ReproMaxNeed, eco.ReproMinHealth, eco.MateGiveUpTicks })
             writer.Write(v);
         writer.Write(tick);
         // 2. Counters, accepted command queue in execution order, trusted grants.
@@ -390,6 +399,7 @@ public sealed partial class SimulationWorld : ISimulation
         scheduler.WriteCanonical(writer);
         WritePathQueue(writer);
         WriteEcology(writer);
+        WriteLife(writer);
         // 5. RNG streams, retained events, durable milestones.
         writer.Write((uint)streamTags.Length);
         foreach (uint tag in streamTags)
@@ -415,7 +425,7 @@ public sealed partial class SimulationWorld : ISimulation
         switch (command)
         {
             case SpawnEntityCommand s:
-                writer.Write(s.X); writer.Write(s.Y); writer.Write(s.SpeciesKey);
+                writer.Write(s.X); writer.Write(s.Y); writer.Write(s.SpeciesKey); writer.Write((int)s.Sex);
                 break;
             case TakeResourceCommand t:
                 writer.Write(t.X); writer.Write(t.Y); writer.Write((byte)t.Resource); writer.Write(t.Amount);
