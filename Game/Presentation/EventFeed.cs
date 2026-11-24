@@ -70,6 +70,10 @@ public partial class EventFeed : Label
         EventKinds.TradeSold => $"t{e.Tick}: trader #{e.Actor} sold {e.Amount} {(ResourceKind)e.Reason} to settlement #{e.Target}",
         EventKinds.TradePaid => $"t{e.Tick}: settlement #{e.Actor} paid {e.Amount} coins to #{e.Target}",
         EventKinds.GuardAlert => $"t{e.Tick}: guard #{e.Actor} defends against #{e.Target}",
+        EventKinds.SpellCast => e.Reason == (int)Spell.Firebolt ? $"t{e.Tick}: #{e.Actor} casts Firebolt at {SpeciesOf(e.Target)} #{e.Target}"
+            : $"t{e.Tick}: #{e.Actor} heals #{e.Target} (+{e.Amount / 10_000}%)",
+        EventKinds.AnimalTamed => $"t{e.Tick}: {SpeciesOf(e.Target)} #{e.Target} tamed by #{e.Actor} for settlement #{e.Reason}",
+        EventKinds.TameFed when e.Reason == 0 => $"t{e.Tick}: {SpeciesOf(e.Target)} #{e.Target} refused food from #{e.Actor}",
         EventKinds.CarryLost => $"t{e.Tick}: #{e.Actor} died carrying {e.Amount} {(ResourceKind)e.Reason}",
         EventKinds.EventsDropped => $"t{e.Tick}: {e.Amount} minor events skipped",
         _ => null, // applied commands, eating, drinking, wandering stay out of the feed (inspector shows them)
