@@ -6,6 +6,10 @@ T001–T014 DONE and merged to main (2026-11-24; T003–T014 merged by owner ins
 
 ## Handoff log
 
+**2026-11-25 | Claude Code | FIX-R2-visuals | main | merged (self-reviewed, A009)**
+
+- T019 review findings 10/11/12/15(visual)/2(inspector) fixed in Game/** with EffectsAcceptance regressions (mutation-checked for #10). Simulation findings handed to Antigravity as FIX-R2. All 6 Godot acceptances pass. Handoff docs/handoffs/FIX-R2-visuals.md.
+
 **2026-11-25 | Claude Code | T018-mood takeover + T019 review integrated | main | merged**
 
 - Codex's T018-mood (stopped at its usage limit, uncommitted) reviewed and finished: town lamp falloff fixed (hard-edged box at dusk), comments, handoff docs/handoffs/T018-mood.md. Codex's T019 review merged (docs/reviews/2026-11-codex-review-T019.md, 15 findings). Combined main with Antigravity's FIX-R1: 101/101 tests, T007/T008/GodTools/Settlement/Effects/Mood acceptances pass.
