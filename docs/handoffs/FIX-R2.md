@@ -71,13 +71,13 @@ Currently tamed/domestic animals enforce `WithinAnimalLeash` (town `Radius`) on 
 - **Schema 15 golden hash:**
   - `dotnet build F:\Code\game-dev\worktrees\FIX-R2-antigravity\Tests\Simulation.Tests -c Release --no-restore` -> 0 Warnings, 0 Errors
   - `dotnet exec --runtimeconfig .../Simulation.Tests.runtimeconfig.json .../Headless.dll 42 1` -> `1 6169E3B9DB1C72B55C0C7F35FAEC8177A21797E8121BB03010FA8A5C33BF9F9F`
-- **Simulation tests:**
+- **Simulation tests (post-merge with `origin/main`):**
   - `dotnet test F:\Code\game-dev\worktrees\FIX-R2-antigravity\Tests\Simulation.Tests -c Release -m:1` -> **112/112 test groups passed**, exit 0.
-- **Benchmark (`1000` entities, `3000` ticks):**
+- **Benchmark (`1000` entities, `3000` ticks, post-merge with `origin/main`):**
   - `dotnet build F:\Code\game-dev\worktrees\FIX-R2-antigravity\Tests\Benchmarks -c Release` -> 0 Warnings, 0 Errors
   - `dotnet F:\Code\game-dev\worktrees\FIX-R2-antigravity\Tests\Benchmarks\bin\Release\net8.0\Benchmarks.dll 1000 --ticks 3000`:
-    - `p50 0.928 ms | p95 1.373 ms | p99 2.051 ms | max 25.123 ms | 998 ticks/s | 26.1 KB/tick | gen 19/7/5 | 95 MB | live 999 | path backlog 180/0 | decisions pending 1459/1057 | overdue end 12 | save 3652 KB / 141 ms / load 83 ms`
-    - Comparison vs pre-FIX-R2 baseline (`~2.6 ms` p99, `88.0 KB/tick`): allocation dropped ~70% (`88.0 -> 26.1 KB/tick`) and `p50`/`p99` improved (`~1.7 -> 0.93 ms` p50, `~2.6 -> 2.05 ms` p99) via zero-alloc `IGridVisitor` scans and per-tick cache.
+    - `p50 0.936 ms | p95 1.294 ms | p99 1.912 ms | max 9.044 ms | 1008 ticks/s | 26.1 KB/tick | gen 19/7/5 | 80 MB | live 999 | path backlog 180/0 | decisions pending 1459/1057 | overdue end 12 | save 3652 KB / 143 ms / load 83 ms`
+    - Comparison vs pre-FIX-R2 baseline (`~2.6 ms` p99, `88.0 KB/tick`): allocation dropped ~70% (`88.0 -> 26.1 KB/tick`) and `p50`/`p99` improved (`~1.7 -> 0.94 ms` p50, `~2.6 -> 1.91 ms` p99) via zero-alloc `IGridVisitor` scans and per-tick cache.
 - **Godot build & headless acceptance:**
   - `dotnet build F:\Code\game-dev\worktrees\FIX-R2-antigravity\Game\Game.csproj -c Debug` -> Build succeeded, 0 Warning(s), 0 Error(s).
   - `%USERPROFILE%\scoop\apps\godot-mono\current\godot-mono.console.exe --headless --path Game --import` -> succeeded (`.import` changes reverted afterward with `git checkout -- Game/Assets`).
