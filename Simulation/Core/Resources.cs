@@ -1,6 +1,7 @@
 namespace FantasyWorld.Simulation;
 
-public enum ResourceKind : byte { Food = 1, Water = 2, Wood = 3 }
+/// <summary>Meat exists only in carcasses (T009), never in ResourceStore nodes.</summary>
+public enum ResourceKind : byte { Food = 1, Water = 2, Wood = 3, Meat = 4 }
 
 /// <summary>Per-kind stock rule. Amounts are integer units; regrowth adds RegrowAmount every RegrowIntervalTicks up to Capacity.</summary>
 public sealed record ResourceRule(int Capacity, int RegrowAmount, int RegrowIntervalTicks)

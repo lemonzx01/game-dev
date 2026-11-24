@@ -31,6 +31,7 @@ public enum CommandReason
     NotNeeded = 13,
     HasResource = 14,
     Occupied = 15,
+    WrongDiet = 16,
 }
 
 public static class EventKinds
@@ -44,6 +45,10 @@ public static class EventKinds
     /// <summary>Actor = EntityId, X/Y = resource tile, Amount = units consumed.</summary>
     public const int EntityAte = 201;
     public const int EntityDrank = 202;
+    /// <summary>Actor = attacker, Target = victim, Amount = health removed.</summary>
+    public const int Attacked = 203;
+    /// <summary>X/Y = carcass tile, Amount = meat removed by decay (explicit sink).</summary>
+    public const int CarcassDecayed = 204;
     /// <summary>Actor = EntityId, Target = threat id (Flee), X/Y = position, Reason = <see cref="ActionKind"/>.</summary>
     public const int ActionStarted = 300;
     /// <summary>Actor = EntityId, Reason = <see cref="ActionKind"/> whose path search found nothing reachable.</summary>

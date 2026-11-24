@@ -1,0 +1,6 @@
+[
+  { "key": 1, "name": "Deer",   "diet": "Herbivore", "domestic": false, "moveTicksPerTile": 2, "meatYield": 8, "attackDamage": 0,      "leashRadius": 0, "fears": [4], "hunts": [] },
+  { "key": 2, "name": "Sheep",  "diet": "Herbivore", "domestic": true,  "moveTicksPerTile": 2, "meatYield": 6, "attackDamage": 0,      "leashRadius": 6, "fears": [4], "hunts": [] },
+  { "key": 3, "name": "Rabbit", "diet": "Herbivore", "domestic": false, "moveTicksPerTile": 1, "meatYield": 2, "attackDamage": 0,      "leashRadius": 0, "fears": [4], "hunts": [] },
+  { "key": 4, "name": "Wolf",   "diet": "Carnivore", "domestic": false, "moveTicksPerTile": 1, "meatYield": 5, "attackDamage": 400000, "leashRadius": 0, "fears": [],  "hunts": [1, 2, 3] }
+]

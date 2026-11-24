@@ -39,9 +39,9 @@ public sealed partial class SimulationWorld
             // Stale: entity died, switched action (e.g. fled) or already re-requested.
             if (e.LifeState != LifeStates.Alive || !e.Mind.AwaitingPath || e.Mind.Kind != request.Kind || e.Mind.StepToken != request.Token)
                 continue;
-            var goal = request.Kind == ActionKind.Eat ? ResourceKind.Food : ResourceKind.Water;
             var path = Navigation.FindNearest(terrain, options.MapWidth, options.MapHeight, e.X, e.Y,
-                MindCfg.PerceptionRadius, MindCfg.SearchNodeBudget, cell => CanConsumeAt(cell, goal), out int expanded);
+                MindCfg.PerceptionRadius, MindCfg.SearchNodeBudget,
+                cell => request.Kind == ActionKind.Eat ? CanEatAt(e, cell) : CanConsumeAt(cell, ResourceKind.Water), out int expanded);
             remaining -= expanded;
             LastPathExpansions += expanded;
             LastPathsServed++;
@@ -56,7 +56,7 @@ public sealed partial class SimulationWorld
             }
             e.Mind.Path = path;
             e.Mind.PathIndex = 0;
-            ScheduleStep(e, now + (path.Length == 0 ? 1 : MindCfg.MoveTicksPerTile));
+            ScheduleStep(e, now + (path.Length == 0 ? 1 : MoveTicks(e)));
         }
     }
 

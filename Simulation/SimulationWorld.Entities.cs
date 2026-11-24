@@ -7,6 +7,7 @@ internal sealed class EntityState
 {
     public required EntityId Id { get; init; }
     public int X, Y, Species, Action, LifeState;
+    public int HomeX, HomeY; // spawn tile; domestic animals stay leashed to it
     public long BirthTick;
     public VitalsAnchor Vitals;
     public long ScheduledDeathTick = long.MaxValue; // only the item due at this tick is live; older items are stale
@@ -19,7 +20,7 @@ internal sealed class EntityState
 
 /// <summary>Durable death milestone (ARCHITECTURE §9): kept after the entity leaves the live list.</summary>
 internal readonly record struct DeathRecord(long EntityId, int Species, int X, int Y, long BirthTick, long DeathTick,
-    DeathCause Cause, long Hunger, long Thirst, long EventSequence);
+    DeathCause Cause, long Hunger, long Thirst, long EventSequence, long Killer);
 
 public sealed partial class SimulationWorld
 {
@@ -31,7 +32,7 @@ public sealed partial class SimulationWorld
         var id = ids.Allocate();
         var entity = new EntityState
         {
-            Id = id, X = x, Y = y, Species = species, LifeState = LifeStates.Alive, BirthTick = now,
+            Id = id, X = x, Y = y, HomeX = x, HomeY = y, Species = species, LifeState = LifeStates.Alive, BirthTick = now,
             Vitals = new VitalsAnchor(now, 0, 0, VitalsConfig.MaxHealth),
         };
         entities.Add(entity); // IDs are monotonic, so the list stays sorted by ID
@@ -58,6 +59,15 @@ public sealed partial class SimulationWorld
         if (e.LifeState != LifeStates.Alive || e.ScheduledDeathTick != now) return; // stale booking
         var (deathTick, cause) = e.Vitals.DeathTick(options.Vitals);
         if (deathTick != now) throw new InvalidOperationException($"Entity {entityId} death booked at {now} but due {deathTick}.");
+        Die(e, now, cause, 0);
+    }
+
+    /// <summary>
+    /// Single death path (vitals or predation): actions cleared, one critical EntityDied event plus a durable record,
+    /// and the body becomes a carcass with the species' MeatYield.
+    /// </summary>
+    private void Die(EntityState e, long now, DeathCause cause, long killer)
+    {
         var v = e.Vitals.At(now, options.Vitals);
         e.LifeState = LifeStates.Dead;
         StartIdle(e, now);  // actions invalidated immediately (pending step superseded)
@@ -67,9 +77,10 @@ public sealed partial class SimulationWorld
         e.Cause = cause;
         e.ScheduledDeathTick = long.MaxValue;
         // Death event and durable record are written together; deaths are never dropped by the per-tick cap.
-        long sequence = Emit(new WorldEvent(0, now, EventKinds.EntityDied, 0, 0, e.Id.Value, e.X, e.Y, (int)cause), critical: true);
+        long sequence = Emit(new WorldEvent(0, now, EventKinds.EntityDied, 0, killer, e.Id.Value, e.X, e.Y, (int)cause), critical: true);
         deathIndex.Add(e.Id.Value, deaths.Count);
-        deaths.Add(new DeathRecord(e.Id.Value, e.Species, e.X, e.Y, e.BirthTick, now, cause, v.Hunger, v.Thirst, sequence));
+        deaths.Add(new DeathRecord(e.Id.Value, e.Species, e.X, e.Y, e.BirthTick, now, cause, v.Hunger, v.Thirst, sequence, killer));
+        AddCarcass(Cell(e.X, e.Y), SpeciesOf(e)?.MeatYield ?? 0, now);
     }
 
     /// <summary>
@@ -83,7 +94,9 @@ public sealed partial class SimulationWorld
         if (i < 0) return deathIndex.ContainsKey(entityId.Value) ? CommandReason.ActorDead : CommandReason.UnknownEntity;
         var e = entities[i];
         if (e.LifeState != LifeStates.Alive) return CommandReason.ActorDead;
+        if (kind == ResourceKind.Meat) return TryEatMeat(e, now);
         if (kind is not (ResourceKind.Food or ResourceKind.Water)) return CommandReason.InvalidCommand;
+        if (kind == ResourceKind.Food && DietOf(e) == Diet.Carnivore) return CommandReason.WrongDiet;
 
         int node = -1, nx = -1, ny = -1;
         foreach (var (dx, dy) in new[] { (0, -1), (-1, 0), (0, 0), (1, 0), (0, 1) }) // ascending cell index
@@ -113,7 +126,7 @@ public sealed partial class SimulationWorld
         ScheduleRegrowth(node, now);
         ScheduleDeath(e);
         Emit(new WorldEvent(0, now, kind == ResourceKind.Food ? EventKinds.EntityAte : EventKinds.EntityDrank,
-            0, e.Id.Value, 0, nx, ny, 0, units));
+            0, e.Id.Value, 0, nx, ny, (int)kind, units));
         return CommandReason.None;
     }
 
@@ -171,7 +184,7 @@ public sealed partial class SimulationWorld
         for (int k = lo; k < lo + count; k++)
         {
             var r = deaths[k];
-            page.Add(new WorldEvent(r.EventSequence, r.DeathTick, EventKinds.EntityDied, 0, 0, r.EntityId, r.X, r.Y, (int)r.Cause));
+            page.Add(new WorldEvent(r.EventSequence, r.DeathTick, EventKinds.EntityDied, 0, r.Killer, r.EntityId, r.X, r.Y, (int)r.Cause));
         }
         var records = page.MoveToImmutable();
         return new(PageStatus.Ok, records, records[^1].EventSequence);
@@ -211,6 +224,7 @@ public sealed partial class SimulationWorld
             writer.Write(r.Hunger);
             writer.Write(r.Thirst);
             writer.Write(r.EventSequence);
+            writer.Write(r.Killer);
         }
     }
 

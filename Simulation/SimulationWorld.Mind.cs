@@ -18,6 +18,9 @@ internal struct MindState
     public long NoFoodUntil;      // cooldown after an unreachable food search
     public long NoWaterUntil;
     public int Replans;           // re-plans after a blocked path in the current action
+    public long HuntUntil;        // give up the current hunt at this tick
+    public long NoHuntUntil;      // cooldown after a failed hunt
+    public long AttackReadyTick;  // next tick an attack may land
 }
 
 public sealed partial class SimulationWorld
@@ -82,7 +85,7 @@ public sealed partial class SimulationWorld
     /// <summary>Nearest living feared entity within the perception radius (Manhattan distance, then lower ID).</summary>
     private (EntityState? Threat, int Distance) NearestThreat(EntityState e)
     {
-        if (!MindCfg.FearOf.TryGetValue(e.Species, out var feared) || feared.IsEmpty) return (null, 0);
+        if (!HasFears(e)) return (null, 0);
         EntityState? best = null;
         int bestDistance = int.MaxValue;
         int r = MindCfg.PerceptionRadius;
@@ -90,7 +93,7 @@ public sealed partial class SimulationWorld
         {
             if (id == e.Id.Value) return;
             var other = entities[FindLive(id)];
-            if (other.LifeState != LifeStates.Alive || !feared.Contains(other.Species)) return;
+            if (other.LifeState != LifeStates.Alive || !Fears(e, other.Species)) return;
             if (Math.Max(Math.Abs(other.X - e.X), Math.Abs(other.Y - e.Y)) > r) return;
             int d = Math.Abs(other.X - e.X) + Math.Abs(other.Y - e.Y);
             if (d < bestDistance || (d == bestDistance && other.Id.Value < best!.Id.Value)) { best = other; bestDistance = d; }
@@ -98,9 +101,26 @@ public sealed partial class SimulationWorld
         return (best, best is null ? 0 : bestDistance);
     }
 
+    // Goal test for an Eat path: plants for herbivores, carcass meat for carnivores, either for omnivores.
+    private bool CanEatAt(EntityState e, int cell) => DietOf(e) switch
+    {
+        Diet.Herbivore => CanConsumeAt(cell, ResourceKind.Food),
+        Diet.Carnivore => CanConsumeAt(cell, ResourceKind.Meat),
+        _ => CanConsumeAt(cell, ResourceKind.Food) || CanConsumeAt(cell, ResourceKind.Meat),
+    };
+
     // Food: a stocked node on the tile. Water: a stocked water node on a 4-neighbour (water tiles are impassable).
+    // Meat: a carcass on the tile or a 4-neighbour.
     private bool CanConsumeAt(int cell, ResourceKind kind)
     {
+        if (kind == ResourceKind.Meat)
+        {
+            int mx = cell % options.MapWidth, my = cell / options.MapWidth;
+            if (MeatAt(cell) > 0) return true;
+            foreach (var (dx, dy) in Neighbours)
+                if (InBounds(mx + dx, my + dy) && MeatAt(Cell(mx + dx, my + dy)) > 0) return true;
+            return false;
+        }
         if (kind == ResourceKind.Food)
         {
             int n = resources.Find(cell, ResourceKind.Food);
@@ -137,7 +157,7 @@ public sealed partial class SimulationWorld
 
         var v = e.Vitals.At(now, options.Vitals);
         long fatigue = FatigueAt(e.Mind, now);
-        Span<(int Score, ActionKind Kind)> candidates = stackalloc (int, ActionKind)[5];
+        Span<(int Score, ActionKind Kind)> candidates = stackalloc (int, ActionKind)[6];
         int n = 0;
         if (threat is not null)
             candidates[n++] = (2000 + (cfg.PerceptionRadius * 2 - distance) * 50, ActionKind.Flee);
@@ -145,6 +165,9 @@ public sealed partial class SimulationWorld
             candidates[n++] = ((int)(v.Thirst * 12 / 10_000), ActionKind.Drink);
         if (v.Hunger >= cfg.EatStartNeed || current == ActionKind.Eat)
             candidates[n++] = ((int)(v.Hunger / 1_000), ActionKind.Eat);
+        // Predators hunt only when hungry; a reachable carcass (Eat) is preferred by one point.
+        if ((SpeciesOf(e)?.Hunts.Length ?? 0) > 0 && (v.Hunger >= cfg.EatStartNeed || current == ActionKind.Hunt))
+            candidates[n++] = ((int)(v.Hunger / 1_000) - 1, ActionKind.Hunt);
         if (threat is null && (fatigue >= cfg.RestStartFatigue || current == ActionKind.Rest))
             candidates[n++] = ((int)(fatigue * 9 / 10_000), ActionKind.Rest);
         candidates[n++] = (50, ActionKind.Wander);
@@ -164,6 +187,7 @@ public sealed partial class SimulationWorld
     {
         int[]? path = null;
         int wanderCell = -1;
+        long huntTarget = 0;
         switch (kind)
         {
             case ActionKind.Eat:
@@ -172,6 +196,10 @@ public sealed partial class SimulationWorld
                 break;
             case ActionKind.Flee:
                 if (threat is null || FleeStep(e, threat) < 0) return false;
+                break;
+            case ActionKind.Hunt:
+                if (e.Mind.NoHuntUntil > now || NearestPrey(e) is not { } prey) return false;
+                huntTarget = prey.Id.Value;
                 break;
             case ActionKind.Wander:
                 wanderCell = WanderStep(e);
@@ -184,7 +212,9 @@ public sealed partial class SimulationWorld
         e.Action = (int)kind;
         e.Mind.Path = kind == ActionKind.Wander ? [wanderCell] : path;
         e.Mind.PathIndex = 0;
-        e.Mind.TargetEntity = threat?.Id.Value ?? 0;
+        e.Mind.TargetEntity = kind == ActionKind.Hunt ? huntTarget : threat?.Id.Value ?? 0;
+        e.Mind.HuntUntil = now + options.Ecology.HuntGiveUpTicks;
+        e.Mind.AttackReadyTick = now;
         e.Mind.FleeStepsDone = 0;
         e.Mind.Replans = 0;
         e.Mind.AwaitingPath = false;
@@ -203,7 +233,7 @@ public sealed partial class SimulationWorld
         }
         else
         {
-            ScheduleStep(e, now + MindCfg.MoveTicksPerTile);
+            ScheduleStep(e, now + MoveTicks(e));
         }
         return true;
     }
@@ -234,6 +264,9 @@ public sealed partial class SimulationWorld
             case ActionKind.Rest:
                 FinishAction(e, now); // recovery reached the target
                 return;
+            case ActionKind.Hunt:
+                HuntStep(e, now);
+                return;
             case ActionKind.Flee:
                 var threat = FindLive(e.Mind.TargetEntity) is int ti and >= 0 ? entities[ti] : null;
                 int dest = threat is { LifeState: LifeStates.Alive } ? FleeStep(e, threat) : -1;
@@ -242,7 +275,7 @@ public sealed partial class SimulationWorld
                 bool safe = threat is null || threat.LifeState != LifeStates.Alive
                     || Math.Max(Math.Abs(threat.X - e.X), Math.Abs(threat.Y - e.Y)) > MindCfg.PerceptionRadius;
                 if (dest < 0 || safe || e.Mind.FleeStepsDone >= MindCfg.FleeSteps) FinishAction(e, now);
-                else ScheduleStep(e, now + MindCfg.MoveTicksPerTile);
+                else ScheduleStep(e, now + MoveTicks(e));
                 return;
             case ActionKind.Eat:
             case ActionKind.Drink:
@@ -253,14 +286,16 @@ public sealed partial class SimulationWorld
                     int next = path[e.Mind.PathIndex++];
                     if (!TerrainRules.IsPassable(terrain[next])) { OnPathBlocked(e, now); return; }
                     MoveTo(e, next);
-                    if (e.Mind.PathIndex < path.Length) { ScheduleStep(e, now + MindCfg.MoveTicksPerTile); return; }
+                    if (e.Mind.PathIndex < path.Length) { ScheduleStep(e, now + MoveTicks(e)); return; }
                 }
                 if (e.Mind.Kind == ActionKind.Wander)
                 {
                     StartIdle(e, now); // the regular think cadence continues; no early re-think
                     return;
                 }
-                TryConsume(e.Id, e.Mind.Kind == ActionKind.Eat ? ResourceKind.Food : ResourceKind.Water, now);
+                if (e.Mind.Kind == ActionKind.Drink) TryConsume(e.Id, ResourceKind.Water, now);
+                else if (DietOf(e) == Diet.Carnivore || TryConsume(e.Id, ResourceKind.Food, now) != CommandReason.None)
+                    TryConsume(e.Id, ResourceKind.Meat, now); // omnivores fall back to meat
                 FinishAction(e, now); // consumed, or the stock vanished meanwhile: re-plan
                 return;
         }
@@ -296,7 +331,7 @@ public sealed partial class SimulationWorld
         {
             var (dx, dy) = Neighbours[(start + k) % 4];
             int x = e.X + dx, y = e.Y + dy;
-            if (InBounds(x, y) && TerrainRules.IsPassable(terrain[Cell(x, y)])) return Cell(x, y);
+            if (InBounds(x, y) && TerrainRules.IsPassable(terrain[Cell(x, y)]) && WithinLeash(e, x, y)) return Cell(x, y);
         }
         return -1;
     }
@@ -326,6 +361,9 @@ public sealed partial class SimulationWorld
         w.Write(m.NoFoodUntil);
         w.Write(m.NoWaterUntil);
         w.Write(m.Replans);
+        w.Write(m.HuntUntil);
+        w.Write(m.NoHuntUntil);
+        w.Write(m.AttackReadyTick);
     }
 
     internal int LastDiscretionaryRun { get; private set; }

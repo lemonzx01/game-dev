@@ -255,6 +255,9 @@ public sealed partial class SimulationWorld : ISimulation
             case WorkKind.EntityDeath:
                 RunDeath(item.Subject, now);
                 break;
+            case WorkKind.CarcassDecay:
+                RunDecay(item, now);
+                break;
             case WorkKind.Think:
             case WorkKind.ActionStep:
                 RunMindWork(item, now);
@@ -328,7 +331,7 @@ public sealed partial class SimulationWorld : ISimulation
         using var bytes = new MemoryStream();
         using var writer = new BinaryWriter(bytes);
         // 1. Versions, identity, configuration, clock.
-        writer.Write(5u); // schema
+        writer.Write(6u); // schema
         writer.Write(1u); // RNG version
         writer.Write(worldId.Value);
         writer.Write(options.Seed);
@@ -356,6 +359,9 @@ public sealed partial class SimulationWorld : ISimulation
                      vc.RegenPerTick, vc.FoodPerUnit, vc.WaterPerUnit, vc.MaxUnitsPerAct })
             writer.Write(v);
         options.Mind.WriteCanonical(writer);
+        SpeciesCatalog.WriteCanonical(writer, options.Species);
+        foreach (int v in new[] { options.Ecology.CarcassDecayTicks, options.Ecology.AttackIntervalTicks, options.Ecology.HuntGiveUpTicks, options.Ecology.HuntCooldownTicks })
+            writer.Write(v);
         writer.Write(tick);
         // 2. Counters, accepted command queue in execution order, trusted grants.
         writer.Write(ids.Next);
@@ -383,6 +389,7 @@ public sealed partial class SimulationWorld : ISimulation
         // 4. Scheduled work.
         scheduler.WriteCanonical(writer);
         WritePathQueue(writer);
+        WriteEcology(writer);
         // 5. RNG streams, retained events, durable milestones.
         writer.Write((uint)streamTags.Length);
         foreach (uint tag in streamTags)

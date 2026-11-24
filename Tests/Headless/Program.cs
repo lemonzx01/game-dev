@@ -31,6 +31,7 @@ var world = new SimulationWorld(new SimulationOptions
     WorldId = new WorldId(1),
     Seed = seed,
     PrewarmStreams = [.. tags],
+    Species = SpeciesCatalog.Default,
     Grants = ImmutableSortedDictionary<long, AuthorityGrant>.Empty.Add(God, AuthorityGrant.God),
 });
 
@@ -50,6 +51,8 @@ for (int i = 0; i < ticks; i++)
     long next = world.LastCompletedTick + 1;
     if (next % 10 == 5)
         world.SubmitCommand(new SpawnEntityCommand(new WorldId(1), God, CommandModes.God, land.X, land.Y, 1));
+    if (next == 15) // a predator joins so replay covers hunting and carcasses
+        world.SubmitCommand(new SpawnEntityCommand(new WorldId(1), God, CommandModes.God, land.X, land.Y, SpeciesCatalog.Wolf));
     if (next % 25 == 0 && food.X >= 0)
         world.SubmitCommand(new TakeResourceCommand(new WorldId(1), God, CommandModes.God, food.X, food.Y, ResourceKind.Food, 3));
     world.Step();

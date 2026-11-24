@@ -27,7 +27,7 @@ public sealed record VitalsConfig(
 }
 
 /// <summary>Stable numeric death causes; values are part of the event/hash schema.</summary>
-public enum DeathCause { None = 0, Starvation = 1, Dehydration = 2 }
+public enum DeathCause { None = 0, Starvation = 1, Dehydration = 2, Predation = 3 }
 
 /// <summary>Vital values at one tick, derived from an anchor; never stored per tick.</summary>
 public readonly record struct VitalsView(long Hunger, long Thirst, long Health);

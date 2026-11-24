@@ -22,6 +22,9 @@ public sealed record SimulationOptions
     public ResourceConfig Resources { get; init; } = ResourceConfig.Default;
     public VitalsConfig Vitals { get; init; } = VitalsConfig.Default;
     public MindConfig Mind { get; init; } = MindConfig.Default;
+    /// <summary>Species definitions by key (see Data/species.json). Empty: every species is a plain herbivore.</summary>
+    public ImmutableSortedDictionary<int, SpeciesDef> Species { get; init; } = ImmutableSortedDictionary<int, SpeciesDef>.Empty;
+    public EcologyConfig Ecology { get; init; } = EcologyConfig.Default;
     /// <summary>Optional hand-built map; when set, MapWidth/MapHeight must equal its size and no terrain/resources are generated.</summary>
     public MapOverride? Map { get; init; }
     public ImmutableSortedDictionary<long, AuthorityGrant> Grants { get; init; } = ImmutableSortedDictionary<long, AuthorityGrant>.Empty;
@@ -45,6 +48,8 @@ public sealed record SimulationOptions
         Resources.Validate();
         Vitals.Validate();
         Mind.Validate();
+        SpeciesCatalog.Validate(Species);
+        Ecology.Validate();
         if (Map is not null && (Map.Width != MapWidth || Map.Height != MapHeight || Map.Cells.Length != MapWidth * MapHeight))
             throw new ArgumentException("Map override size must match MapWidth/MapHeight.");
         foreach (var (issuer, grant) in Grants)
