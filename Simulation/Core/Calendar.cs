@@ -16,7 +16,8 @@ public sealed record CalendarConfig(int TicksPerDay, int DaysPerSeason)
 }
 
 /// <summary>Calendar derived purely from the integer tick; all fields are zero-based.</summary>
-public readonly record struct WorldTime(long Tick, long Day, int TickOfDay, long Year, Season Season, int DayOfSeason)
+/// <remarks>Temperature is the open-air temperature (°C) filled in by the world from its climate; 0 when built from the calendar alone.</remarks>
+public readonly record struct WorldTime(long Tick, long Day, int TickOfDay, long Year, Season Season, int DayOfSeason, int Temperature = 0)
 {
     public static WorldTime From(long tick, CalendarConfig calendar)
     {

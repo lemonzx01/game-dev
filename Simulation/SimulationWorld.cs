@@ -238,7 +238,35 @@ public sealed partial class SimulationWorld : ISimulation
         var rule = resources.Config.RuleFor(stock.Kind);
         if (stock.RegrowScheduled || stock.Amount >= rule.Capacity || rule.RegrowAmount == 0) return;
         stock.RegrowScheduled = true;
-        scheduler.Schedule(checked(now + rule.RegrowIntervalTicks), 10, 0, new WorkItem(WorkKind.RegrowResource, node), isRequired: true);
+        var (interval, _) = Growth(node, now);
+        scheduler.Schedule(checked(now + interval), 10, 0, new WorkItem(WorkKind.RegrowResource, node), isRequired: true);
+    }
+
+    /// <summary>
+    /// T012 seasonal growth for a node at a tick: plants and wood grow every RegrowIntervalTicks × 100 / growth% of the
+    /// current season, and not at all in a dormant season or on a tile colder than MinGrowthTemperature (then the node is
+    /// re-checked after one base interval). Water regrows at its base rate all year.
+    /// </summary>
+    private (long Interval, bool Grows) Growth(int node, long now)
+    {
+        var stock = resources[node];
+        var rule = resources.Config.RuleFor(stock.Kind);
+        if (stock.Kind == ResourceKind.Water) return (rule.RegrowIntervalTicks, true);
+        var climate = options.Climate;
+        int percent = climate.GrowthPercent(WorldTime.From(now, options.Calendar).Season);
+        if (percent == 0 || TemperatureAt(stock.Cell, now) < climate.MinGrowthTemperature) return (rule.RegrowIntervalTicks, false);
+        return (Math.Max(1, (long)rule.RegrowIntervalTicks * 100 / percent), true);
+    }
+
+    private int TemperatureAt(int cell, long at) =>
+        options.Climate.AirTemperature(at, options.Calendar) + options.Climate.TerrainOffset(terrain[cell]);
+
+    /// <summary>Temperature (°C) of a tile at the last completed tick.</summary>
+    public int ReadTemperature(int x, int y)
+    {
+        CheckAccess();
+        if (!InBounds(x, y)) throw new ArgumentOutOfRangeException(nameof(x));
+        return TemperatureAt(Cell(x, y), tick);
     }
 
     private void RunWork(WorkItem item, long now)
@@ -250,7 +278,8 @@ public sealed partial class SimulationWorld : ISimulation
                 ref var stock = ref resources[node];
                 var rule = resources.Config.RuleFor(stock.Kind);
                 // Widen before adding: Amount + RegrowAmount may exceed int.MaxValue for large configured rules.
-                stock.Amount = (int)Math.Min(rule.Capacity, (long)stock.Amount + rule.RegrowAmount);
+                if (Growth(node, now).Grows) // dormant season or too cold: no growth this time, check again later
+                    stock.Amount = (int)Math.Min(rule.Capacity, (long)stock.Amount + rule.RegrowAmount);
                 stock.RegrowScheduled = false;
                 ScheduleRegrowth(node, now);
                 break;
@@ -300,7 +329,8 @@ public sealed partial class SimulationWorld : ISimulation
             for (int i = 0; i < size; i++) rows.Add(entities[start + i].Row);
             chunks.Add(rows.MoveToImmutable());
         }
-        return snapshot = new(worldId, tick, WorldTime.From(tick, options.Calendar), chunks.MoveToImmutable());
+        var time = WorldTime.From(tick, options.Calendar) with { Temperature = options.Climate.AirTemperature(tick, options.Calendar) };
+        return snapshot = new(worldId, tick, time, chunks.MoveToImmutable());
     }
 
     /// <summary>Static terrain view. Not on ISimulation yet (A007 frozen); see T003 handoff.</summary>
@@ -368,6 +398,7 @@ public sealed partial class SimulationWorld : ISimulation
             writer.Write(v);
         options.Mind.WriteCanonical(writer);
         SpeciesCatalog.WriteCanonical(writer, options.Species);
+        options.Climate.WriteCanonical(writer);
         var psy = options.Psyche;
         foreach (int v in new[] { psy.MemoryCap, psy.RelationshipCap, psy.FearDecayPerTick, psy.TraitJitter, psy.DangerMemoryTicks, psy.DangerAvoidRadius, psy.FearBlocksMatingAbove })
             writer.Write(v);

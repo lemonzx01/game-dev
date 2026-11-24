@@ -25,6 +25,8 @@ internal static class T003Tests
         if (!ok) throw new Exception(message);
     }
 
+    private static readonly ClimateConfig Neutral = ClimateConfig.Default with { SpringGrowthPercent = 100, AutumnGrowthPercent = 100, WinterGrowthPercent = 100, MinGrowthTemperature = -100 };
+
     private static SimulationWorld NewWorld(ulong seed = 42, int size = 64, Func<SimulationOptions, SimulationOptions>? tweak = null)
     {
         var options = new SimulationOptions
@@ -238,7 +240,7 @@ internal static class T003Tests
 
         // Regrowth: 1 unit per interval, never above capacity, schedule clears when full.
         var rules = ResourceConfig.Default with { Food = new ResourceRule(5, 2, 4) };
-        var grow = NewWorld(tweak: o => o with { Resources = rules });
+        var grow = NewWorld(tweak: o => o with { Resources = rules, Climate = Neutral }); // flat growth; seasons are T012
         var food = FindCell(grow, (x, y) => grow.ReadResource(x, y, ResourceKind.Food) is not null);
         grow.SubmitCommand(new TakeResourceCommand(W, God, CommandModes.God, food.X, food.Y, ResourceKind.Food, 5));
         grow.Step(); // tick 1: stock 0, regrow due tick 5
