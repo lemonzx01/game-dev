@@ -1,1 +1,5 @@
 /T001-review/
+bin/
+obj/
+.godot/
+TestResults/
