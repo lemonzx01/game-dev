@@ -2,11 +2,19 @@
 
 ## Current state
 
-**T001 · ARCHITECTURE APPROVED · A007 ACCEPTED (owner 2026-11-24) · ENVIRONMENT BLOCKED** — T001 ยังปิด DONE ไม่ได้เพราะยังไม่มี .NET SDK / Godot .NET ให้ build จริง T002 อยู่ใน TODO
+**T001 · ARCHITECTURE APPROVED · A007 ACCEPTED (owner 2026-11-24) · BLOCKED (ยังไม่มี project ให้ build)** — ติดตั้ง .NET SDK 10.0.404 และ Godot 4.7.2 .NET แล้ว (ดู handoff ล่าสุด) แต่ยังไม่มี build จริง T002 อยู่ใน TODO
 
 ข้อกำหนดที่ยกไปจากรีวิว: N1+N4 → T003, N2 → T013, N3 → Antigravity ก่อน T007, acceptance tests 9 ข้อ → T002 (ดู TASKS.md "Requirements carried from T001 review") ไม่มีข้อใด implement หรือทดสอบแล้ว
 
 ## Handoff log
+
+**2026-11-24 | Claude Code | T001 environment install | feat/T001-simulation-contract**
+
+- ติดตั้งตามคำขอเจ้าของ ผ่าน winget จากแหล่งทางการ (winget ตรวจ installer hash ผ่านทั้งคู่):
+  - `.NET SDK 10.0.404` (Microsoft.DotNet.SDK.10) → `dotnet --list-sdks` = `10.0.404 [C:\Program Files\dotnet\sdk]`
+  - `Godot 4.7.2 .NET` (GodotEngine.GodotEngine.Mono) — `winget install` ล้มด้วย "Portable package from a different source already exists" จึงใช้ `winget download` (hash ผ่าน) แล้วแตก ZIP เองที่ `%LOCALAPPDATA%\Programs\Godot\Godot_v4.7.2-stable_mono_win64\` ไม่ได้เพิ่มใน PATH; `Godot_v4.7.2-stable_mono_win64_console.exe --version --headless` = `4.7.2.stable.mono.official.ed1daf0bf`
+- หมายเหตุ: รุ่นนี้ต่างจากที่ Codex เสนอ (Godot 4.5.1) เพราะ winget มี 4.7.2 เป็น stable ล่าสุด ให้ยืนยัน TargetFramework จาก project ที่ Godot 4.7.2 สร้างจริงก่อน pin
+- สิ่งที่ยังไม่ทำ: ยังไม่มี .csproj/project.godot จึงยังไม่มี build/test ใด ๆ (NOT RUN) เกณฑ์ "actual build commands" ของ T001 ยังไม่ครบ เจ้าของตัดสินว่าจะปิด T001 หรือย้ายการยืนยัน build ไปเป็นข้อ 1–3 ของ T002
 
 **2026-11-24 | Claude Code | T001 review close-out | feat/T001-simulation-contract | BLOCKED (environment)**
 
