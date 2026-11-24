@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text;
 
 namespace FantasyWorld.Simulation;
@@ -58,6 +59,11 @@ internal sealed class Settlement
     public int Books = 1;     // T017: each town keeps one book (Almanac) at its centre
     public long FoundedTick;
     public readonly List<FarmPlot> Plots = new();
+    public readonly SortedDictionary<int, long> BlockedBuyers = new(); // buyer settlement id -> cooldown until tick
+    // Derived runtime cache (not saved or hashed): cleared whenever marketRevision or this town's trade state changes.
+    internal long CachedDealRevision = -1;
+    internal Settlement? CachedDealPartner;
+    internal ResourceKind CachedDealKind;
 }
 
 /// <summary>God tool: found a settlement of a faction at a passable tile, at least two radii from any other settlement.</summary>
@@ -75,6 +81,7 @@ public sealed record FoundSettlementCommand(WorldId WorldId, long IssuerId, stri
 public sealed partial class SimulationWorld
 {
     private readonly List<Settlement> settlements = new(); // index = id − 1, never removed
+    private IReadOnlyList<SettlementView>? settlementViews; // cached immutable read view for the last completed tick
 
     private SettlementConfig TownCfg => options.Settlements;
 
@@ -95,16 +102,19 @@ public sealed partial class SimulationWorld
         for (int dy = -3; dy <= 3; dy++)
             for (int dx = -3; dx <= 3; dx++)
             {
+                int distance = Math.Abs(dx) + Math.Abs(dy);
                 int x = c.X + dx, y = c.Y + dy;
-                if ((dx == 0 && dy == 0) || !InBounds(x, y) || terrain[Cell(x, y)] != Terrain.Grass) continue;
+                if (distance == 0 || distance > 3 || !InBounds(x, y) || terrain[Cell(x, y)] != Terrain.Grass) continue;
                 int cell = Cell(x, y);
                 if (resources.Find(cell, ResourceKind.Food) >= 0 || resources.Find(cell, ResourceKind.Wood) >= 0) continue;
                 if (PlotAt(cell) is not null) continue;
-                candidates.Add((Math.Abs(dx) + Math.Abs(dy), cell));
+                candidates.Add((distance, cell));
             }
         foreach (var (_, cell) in candidates.OrderBy(p => p.Distance).ThenBy(p => p.Cell).Take(TownCfg.FarmPlots))
             town.Plots.Add(new FarmPlot { Cell = cell, Crop = TownCfg.CropMax / 2 });
         settlements.Add(town);
+        marketRevision++;
+        settlementViews = null;
         for (int i = 0; i < town.Plots.Count; i++) ScheduleCrop(town, i, now);
         Emit(new WorldEvent(0, now, EventKinds.SettlementFounded, 0, 0, town.Id, c.X, c.Y, (int)c.Faction, town.Plots.Count));
         return CommandReason.None;
@@ -174,7 +184,7 @@ public sealed partial class SimulationWorld
         if (SettlementOf(e) is not { } s || StageOf(e, tick + 1) == LifeStage.Juvenile || e.Job == Job.Guard) return WorkGoal.None;
         int far = Math.Max(Math.Abs(e.X - s.X), Math.Abs(e.Y - s.Y));
         if (e.CarryAmount > 0)
-            return e.TradePartner != 0 ? WorkGoal.TradeTravel : far > MindCfg.PerceptionRadius ? WorkGoal.ReturnHome : WorkGoal.Deliver;
+            return e.TradePartner != 0 ? WorkGoal.TradeTravel : (e.OnTrip || far > MindCfg.PerceptionRadius) ? WorkGoal.ReturnHome : WorkGoal.Deliver;
         if (e.OnTrip || far > TownCfg.Radius) return WorkGoal.ReturnHome;
         foreach (var p in s.Plots)
             if (p.Crop >= TownCfg.HarvestMinCrop) return WorkGoal.Harvest;
@@ -220,7 +230,9 @@ public sealed partial class SimulationWorld
         switch (e.WorkGoal)
         {
             case WorkGoal.Deliver when cell == Cell(s.X, s.Y) && e.CarryAmount > 0:
+                var beforeDeliver = BuyerSignature(s);
                 if (e.CarryKind == ResourceKind.Food) s.Food += e.CarryAmount; else s.Wood += e.CarryAmount;
+                InvalidateSettlementEconomy(s, beforeDeliver);
                 Emit(new WorldEvent(0, now, EventKinds.Deposited, 0, e.Id.Value, s.Id, s.X, s.Y, (int)e.CarryKind, e.CarryAmount));
                 e.CarryAmount = 0;
                 e.CarryKind = 0;
@@ -228,7 +240,8 @@ public sealed partial class SimulationWorld
             case WorkGoal.Harvest:
                 if (PlotAt(cell) is not { } hit || hit.Town != s || s.Plots[hit.Index].Crop <= 0) break;
                 var plot = s.Plots[hit.Index];
-                int crop = Math.Min(plot.Crop, capacity + Level(e, Skill.Farming) / 2); // skilled farmers bring more
+                int crop = (int)Math.Min(plot.Crop, (long)capacity + Level(e, Skill.Farming) / 2); // skilled farmers bring more
+                if (crop <= 0) break;
                 plot.Crop -= crop;
                 Load(e, ResourceKind.Food, crop);
                 ScheduleCrop(s, hit.Index, now);
@@ -251,7 +264,8 @@ public sealed partial class SimulationWorld
                 if (node < 0 || resources[node].Amount <= 0) break;
                 ref var stock = ref resources[node];
                 var skill = kind == ResourceKind.Food ? Skill.Foraging : Skill.Woodcutting;
-                int take = Math.Min(stock.Amount, capacity + Level(e, skill) / 2);
+                int take = (int)Math.Min(stock.Amount, (long)capacity + Level(e, skill) / 2);
+                if (take <= 0) break;
                 stock.Amount -= take;
                 Load(e, kind, take);
                 ScheduleRegrowth(node, now);
@@ -275,7 +289,9 @@ public sealed partial class SimulationWorld
         var v = e.Vitals.At(now, c);
         if (v.Hunger == 0) return false;
         int units = (int)Math.Min(Math.Min((v.Hunger + c.FoodPerUnit - 1) / c.FoodPerUnit, c.MaxUnitsPerAct), s.Food);
+        var beforeEat = BuyerSignature(s);
         s.Food -= units;
+        InvalidateSettlementEconomy(s, beforeEat);
         e.Vitals = new VitalsAnchor(now, Math.Max(0, v.Hunger - units * c.FoodPerUnit), v.Thirst, v.Health);
         ScheduleDeath(e);
         Emit(new WorldEvent(0, now, EventKinds.EntityAte, 0, e.Id.Value, s.Id, s.X, s.Y, (int)ResourceKind.Food, units));
@@ -318,56 +334,99 @@ public sealed partial class SimulationWorld
             w.Write(s.Coins); w.Write(s.Members); w.Write(s.Guards); w.Write(s.TradersOut); w.Write(s.Books);
             w.Write((uint)s.Plots.Count);
             foreach (var p in s.Plots) { w.Write(p.Cell); w.Write(p.Crop); w.Write(p.GrowScheduled); }
+            w.Write((uint)s.BlockedBuyers.Count);
+            foreach (var (partner, until) in s.BlockedBuyers) { w.Write(partner); w.Write(until); }
         }
     }
 
     private void ReadSettlements(BinaryReader r, Func<BinaryReader, int, int> count)
     {
         int n = count(r, 100_000);
+        var seenPlotCells = new HashSet<int>();
+        var centreCells = new HashSet<int>();
         for (int i = 0; i < n; i++)
         {
             var s = new Settlement { Id = r.ReadInt32() };
-            int nameLength = (int)r.ReadUInt32();
-            if (nameLength is < 1 or > 128) throw new InvalidDataException("Settlement name length invalid.");
+            uint rawNameLength = r.ReadUInt32();
+            if (rawNameLength is < 1u or > 128u) throw new InvalidDataException("Settlement name length invalid.");
+            int nameLength = (int)rawNameLength;
             s.Name = Encoding.UTF8.GetString(r.ReadBytes(nameLength));
             s.Faction = (Faction)r.ReadInt32();
             s.X = r.ReadInt32(); s.Y = r.ReadInt32();
             s.Food = r.ReadInt64(); s.Wood = r.ReadInt64();
             s.FoundedTick = r.ReadInt64();
             s.Coins = r.ReadInt64(); s.Members = r.ReadInt32(); s.Guards = r.ReadInt32(); s.TradersOut = r.ReadInt32(); s.Books = r.ReadInt32();
-            if (s.Coins < 0 || s.Members < 0 || s.Guards < 0 || s.TradersOut < 0) throw new InvalidDataException("Settlement counters invalid.");
-            if (s.Id != i + 1 || !Enum.IsDefined(s.Faction) || !InBounds(s.X, s.Y) || s.Food < 0 || s.Wood < 0)
+            if (s.Coins < 0 || s.Members < 0 || s.Guards < 0 || s.TradersOut < 0 || s.Books is < 0 or > 1000)
+                throw new InvalidDataException("Settlement counters invalid.");
+            if (s.Id != i + 1 || s.Faction is not (Faction.Human or Faction.Demon) || !InBounds(s.X, s.Y)
+                || !TerrainRules.IsPassable(terrain[Cell(s.X, s.Y)]) || s.Food < 0 || s.Wood < 0)
                 throw new InvalidDataException("Settlement invalid.");
+            int centreCell = Cell(s.X, s.Y);
+            if (!centreCells.Add(centreCell) || seenPlotCells.Contains(centreCell))
+                throw new InvalidDataException("Settlement centre overlaps another settlement or plot.");
             int plots = count(r, 32);
             for (int k = 0; k < plots; k++)
             {
                 var p = new FarmPlot { Cell = r.ReadInt32(), Crop = r.ReadInt32(), GrowScheduled = r.ReadBoolean() };
-                if (p.Cell < 0 || p.Cell >= terrain.Length || p.Crop < 0 || p.Crop > TownCfg.CropMax) throw new InvalidDataException("Farm plot invalid.");
+                if (p.Cell < 0 || p.Cell >= terrain.Length || terrain[p.Cell] != Terrain.Grass
+                    || p.Crop < 0 || p.Crop > TownCfg.CropMax || (p.GrowScheduled && p.Crop >= TownCfg.CropMax))
+                    throw new InvalidDataException("Farm plot invalid.");
+                if (centreCells.Contains(p.Cell) || !seenPlotCells.Add(p.Cell))
+                    throw new InvalidDataException("Farm plot overlaps centre or another plot.");
                 s.Plots.Add(p);
+            }
+            uint blockedCount = r.ReadUInt32();
+            if (blockedCount > (uint)n) throw new InvalidDataException("Blocked buyers count invalid.");
+            int lastPartner = 0;
+            for (int k = 0; k < (int)blockedCount; k++)
+            {
+                int partner = r.ReadInt32();
+                long until = r.ReadInt64();
+                if (partner <= lastPartner || partner > n || partner == s.Id || until <= tick)
+                    throw new InvalidDataException("Blocked buyer entry invalid.");
+                s.BlockedBuyers.Add(partner, until);
+                lastPartner = partner;
             }
             settlements.Add(s);
         }
     }
 
+    internal int SettlementAggregationCount { get; private set; }
+    internal long SettlementAggregationEntityScans { get; private set; }
+
     public IReadOnlyList<SettlementView> ReadSettlements()
     {
         CheckAccess();
-        var views = new List<SettlementView>(settlements.Count);
-        foreach (var s in settlements)
+        if (settlementViews is not null) return settlementViews;
+        SettlementAggregationCount++;
+        if (settlements.Count == 0) return settlementViews = ImmutableArray<SettlementView>.Empty;
+        var pop = new int[settlements.Count];
+        var farmers = new int[settlements.Count];
+        var gatherers = new int[settlements.Count];
+        var woodcutters = new int[settlements.Count];
+        SettlementAggregationEntityScans += entities.Count;
+        foreach (var e in entities)
         {
-            int pop = 0, farmers = 0, gatherers = 0, woodcutters = 0;
-            foreach (var e in entities)
+            if (e.LifeState != LifeStates.Alive || e.SettlementId <= 0) continue;
+            int idx = e.SettlementId - 1;
+            pop[idx]++;
+            switch (e.Job)
             {
-                if (e.SettlementId != s.Id || e.LifeState != LifeStates.Alive) continue;
-                pop++;
-                if (e.Job == Job.Farmer) farmers++;
-                else if (e.Job == Job.Gatherer) gatherers++;
-                else if (e.Job == Job.Woodcutter) woodcutters++;
+                case Job.Farmer: farmers[idx]++; break;
+                case Job.Gatherer: gatherers[idx]++; break;
+                case Job.Woodcutter: woodcutters[idx]++; break;
             }
-            views.Add(new SettlementView(s.Id, s.Name, s.Faction, s.X, s.Y, TownCfg.Radius, s.Food, s.Wood, pop, farmers, gatherers, woodcutters,
-                s.Plots.Count(p => p.Crop >= TownCfg.HarvestMinCrop), s.FoundedTick, s.Coins, s.Guards, s.TradersOut));
         }
-        return views;
+        var views = ImmutableArray.CreateBuilder<SettlementView>(settlements.Count);
+        for (int i = 0; i < settlements.Count; i++)
+        {
+            var s = settlements[i];
+            int ready = 0;
+            foreach (var p in s.Plots) if (p.Crop >= TownCfg.HarvestMinCrop) ready++;
+            views.Add(new SettlementView(s.Id, s.Name, s.Faction, s.X, s.Y, TownCfg.Radius, s.Food, s.Wood,
+                pop[i], farmers[i], gatherers[i], woodcutters[i], ready, s.FoundedTick, s.Coins, s.Guards, s.TradersOut));
+        }
+        return settlementViews = views.MoveToImmutable();
     }
 
     /// <summary>Farm plot cells and crop levels of a settlement (for renderers and tests).</summary>

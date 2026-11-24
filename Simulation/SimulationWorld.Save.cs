@@ -18,7 +18,7 @@ public sealed partial class SimulationWorld
 {
     private static readonly byte[] Magic = "FWSSAVE\0"u8.ToArray();
     public const uint SaveFormatVersion = 1;
-    public const uint StateSchema = 13;
+    public const uint StateSchema = 14;
     private static readonly JsonSerializerOptions OptionsJson = new() { WriteIndented = false };
 
     // ---- Save ----------------------------------------------------------------------------------
@@ -319,7 +319,12 @@ public sealed partial class SimulationWorld
         }
 
         int pathCount = Count(r, entityCount);
-        for (int i = 0; i < pathCount; i++) pathQueue.Enqueue(new PathRequest(r.ReadInt64(), (ActionKind)r.ReadInt32(), r.ReadInt64()));
+        for (int i = 0; i < pathCount; i++)
+        {
+            var req = new PathRequest(r.ReadInt64(), (ActionKind)r.ReadInt32(), r.ReadInt64());
+            Require(Enum.IsDefined(req.Kind) && req.EntityId >= 1 && req.EntityId < nextId, "Path request invalid.");
+            pathQueue.Enqueue(req);
+        }
 
         int carcassCount = Count(r, terrain.Length);
         for (int i = 0; i < carcassCount; i++)
@@ -329,9 +334,105 @@ public sealed partial class SimulationWorld
             carcasses.Add(c.Cell, c);
         }
         ReadSettlements(r, Count);
-        foreach (var e in entities)
-            Require(e.SettlementId <= settlements.Count && e.TradePartner <= settlements.Count && e.TradePartner >= 0, "Member or trade partner of an unknown settlement.");
+        ValidateCropScheduler();
+        ValidateSettlementEntities();
         snapshot = null;
+        settlementViews = null;
+    }
+
+    private void ValidateCropScheduler()
+    {
+        var scheduledPlots = new HashSet<(int TownId, int PlotIndex)>();
+        foreach (var (item, key, isRequired) in scheduler.Pending())
+        {
+            if (item.Kind != WorkKind.CropGrow) continue;
+            Require(isRequired && key.EntityId == 0, "CropGrow work item invalid.");
+            Require(item.Subject >= 1 && item.Subject <= settlements.Count, "CropGrow references unknown settlement.");
+            var town = settlements[(int)item.Subject - 1];
+            Require(item.Token >= 0 && item.Token < town.Plots.Count, "CropGrow references unknown farm plot.");
+            var pair = ((int)item.Subject, (int)item.Token);
+            Require(scheduledPlots.Add(pair), "Duplicate CropGrow timer for farm plot.");
+            Require(town.Plots[(int)item.Token].GrowScheduled, "CropGrow timer present when GrowScheduled is false.");
+        }
+        foreach (var town in settlements)
+            for (int pi = 0; pi < town.Plots.Count; pi++)
+                Require(!town.Plots[pi].GrowScheduled || scheduledPlots.Contains((town.Id, pi)), "Missing CropGrow timer for scheduled plot.");
+    }
+
+    private void ValidateSettlementEntities()
+    {
+        var actualMembers = new int[settlements.Count];
+        var actualGuards = new int[settlements.Count];
+        var actualTradersOut = new int[settlements.Count];
+        foreach (var e in entities)
+        {
+            Require(e.SettlementId >= 0 && e.SettlementId <= settlements.Count
+                    && e.TradePartner >= 0 && e.TradePartner <= settlements.Count
+                    && e.TamedTo >= 0 && e.TamedTo <= settlements.Count,
+                "Member, taming or trade partner references an unknown settlement.");
+            ValidateEntityReading(e);
+            if (e.LifeState == LifeStates.Dead)
+            {
+                Require(e.DeathTick == tick && e.CarryAmount == 0 && e.CarryKind == 0 && !e.OnTrip && e.Mind.Kind == ActionKind.Idle,
+                    "Dead entity retains active state.");
+                continue;
+            }
+            if (e.CarryAmount == 0)
+            {
+                Require(e.CarryKind == 0, "Empty carry must have CarryKind 0.");
+            }
+            else
+            {
+                Require(e.CarryKind is ResourceKind.Food or ResourceKind.Wood, "Carried cargo kind invalid.");
+                Require(e.SettlementId > 0 && e.Job != Job.Guard, "Only non-guard settlement members can carry cargo.");
+            }
+            if (e.TamedTo > 0) Require(e.SettlementId == 0, "Settlement member cannot be tamed.");
+            if (e.SettlementId == 0)
+            {
+                Require(e.Job == Job.None && e.WorkGoal == WorkGoal.None && e.CarryAmount == 0 && e.TradePartner == 0 && !e.OnTrip,
+                    "Non-member cannot hold settlement or trade state.");
+                continue;
+            }
+            int si = e.SettlementId - 1;
+            var home = settlements[si];
+            Require(FactionOf(e) == home.Faction, "Member faction does not match settlement faction.");
+            actualMembers[si]++;
+            if (e.Job == Job.Guard) actualGuards[si]++;
+            if (e.OnTrip) actualTradersOut[si]++;
+            Require(e.TradePartner != e.SettlementId, "Settlement cannot trade with itself.");
+            if (e.Job == Job.Guard)
+                Require(!e.OnTrip && e.TradePartner == 0 && e.CarryAmount == 0 && e.Mind.Kind != ActionKind.Work,
+                    "Guard cannot hold trade, cargo or work action.");
+            if (e.TradePartner > 0)
+                Require(e.OnTrip && e.CarryAmount > 0, "TradePartner requires active trip with cargo.");
+            if (e.Mind.Kind == ActionKind.Work)
+            {
+                Require(e.WorkGoal != WorkGoal.None, "Work action requires a WorkGoal.");
+                switch (e.WorkGoal)
+                {
+                    case WorkGoal.TradeTravel:
+                        Require(e.TradePartner > 0 && e.OnTrip && e.CarryAmount > 0, "TradeTravel requires buyer, trip and cargo.");
+                        break;
+                    case WorkGoal.Deliver:
+                        Require(e.CarryAmount > 0, "Deliver requires carried cargo.");
+                        break;
+                    case WorkGoal.TradeLoad:
+                    case WorkGoal.Harvest:
+                    case WorkGoal.GatherFood:
+                    case WorkGoal.GatherWood:
+                        Require(!e.OnTrip && e.TradePartner == 0 && e.CarryAmount == 0, "Collection or TradeLoad invalid while carrying or on trip.");
+                        break;
+                }
+            }
+        }
+        for (int i = 0; i < settlements.Count; i++)
+        {
+            var s = settlements[i];
+            Require(s.Members == actualMembers[i], $"Settlement {s.Id} member count mismatch.");
+            Require(s.Guards == actualGuards[i], $"Settlement {s.Id} guard count mismatch.");
+            Require(s.TradersOut == actualTradersOut[i], $"Settlement {s.Id} TradersOut mismatch.");
+            Require(s.TradersOut <= TradeCfg.MaxTradersOut, $"Settlement {s.Id} TradersOut exceeds limit.");
+        }
     }
 
     private EntityState ReadEntity(BinaryReader r)
@@ -345,7 +446,9 @@ public sealed partial class SimulationWorld
         Require(e.Vitals.Hunger is >= 0 and <= VitalsConfig.MaxNeed && e.Vitals.Thirst is >= 0 and <= VitalsConfig.MaxNeed
                 && e.Vitals.Health is >= 0 and <= VitalsConfig.MaxHealth && e.Vitals.Tick <= tick, "Vitals out of range.");
         e.ScheduledDeathTick = r.ReadInt64(); e.DeathTick = r.ReadInt64(); e.Cause = (DeathCause)r.ReadInt32();
+        Require(Enum.IsDefined(e.Sex) && Enum.IsDefined(e.Cause), "Entity sex or death cause invalid.");
         var m = new MindState { Kind = (ActionKind)r.ReadInt32() };
+        Require(Enum.IsDefined(m.Kind), "Mind action kind invalid.");
         int pathLength = r.ReadInt32();
         Require(pathLength >= -1 && pathLength <= terrain.Length, "Path length invalid.");
         if (pathLength >= 0)
@@ -360,6 +463,7 @@ public sealed partial class SimulationWorld
         m.PathIndex = r.ReadInt32(); m.TargetEntity = r.ReadInt64(); m.FleeStepsDone = r.ReadInt32(); m.CommitUntil = r.ReadInt64();
         m.ThinkToken = r.ReadInt64(); m.StepToken = r.ReadInt64(); m.FatigueTick = r.ReadInt64(); m.Fatigue = r.ReadInt64(); m.Resting = r.ReadBoolean();
         m.AwaitingPath = r.ReadBoolean(); m.NoFoodUntil = r.ReadInt64(); m.NoWaterUntil = r.ReadInt64(); m.Replans = r.ReadInt32();
+        Require(m.PathIndex >= 0 && (m.Path is null || m.PathIndex <= m.Path.Length) && m.FleeStepsDone >= 0 && m.Replans >= 0, "Mind path or counters invalid.");
         m.HuntUntil = r.ReadInt64(); m.NoHuntUntil = r.ReadInt64(); m.AttackReadyTick = r.ReadInt64();
         e.Mind = m;
         var p = e.Psyche;
@@ -372,6 +476,7 @@ public sealed partial class SimulationWorld
             p.Relationships.Add(new Relationship(r.ReadInt64(), r.ReadInt32(), r.ReadInt32(), r.ReadInt64()));
         e.Mind.NoWorkUntil = r.ReadInt64();
         e.SettlementId = r.ReadInt32(); e.Job = (Job)r.ReadInt32(); e.WorkGoal = (WorkGoal)r.ReadInt32();
+        Require(Enum.IsDefined(e.Job) && Enum.IsDefined(e.WorkGoal), "Job or WorkGoal invalid.");
         e.CarryKind = (ResourceKind)r.ReadByte(); e.CarryAmount = r.ReadInt32();
         e.TradePartner = r.ReadInt32(); e.OnTrip = r.ReadBoolean();
         ReadSkillsFrom(r, e);
@@ -384,18 +489,18 @@ public sealed partial class SimulationWorld
     {
         int x = r.ReadInt32(), y = r.ReadInt32();
         var faction = (Faction)r.ReadInt32();
-        int length = (int)r.ReadUInt32();
-        Require(length is >= 1 and <= 128, "Settlement name length invalid.");
-        return new FoundSettlementCommand(world, issuer, mode, x, y, faction, Encoding.UTF8.GetString(r.ReadBytes(length)));
+        uint rawLength = r.ReadUInt32();
+        Require(rawLength is >= 1u and <= 128u, "Settlement name length invalid.");
+        return new FoundSettlementCommand(world, issuer, mode, x, y, faction, Encoding.UTF8.GetString(r.ReadBytes((int)rawLength)));
     }
 
     private static GameCommand ReadCommand(BinaryReader r)
     {
         var world = new WorldId(r.ReadInt64());
         long issuer = r.ReadInt64();
-        int modeLength = (int)r.ReadUInt32();
-        Require(modeLength is >= 0 and <= 64, "Command mode length invalid.");
-        string mode = Encoding.UTF8.GetString(r.ReadBytes(modeLength));
+        uint rawModeLength = r.ReadUInt32();
+        Require(rawModeLength <= 64u, "Command mode length invalid.");
+        string mode = Encoding.UTF8.GetString(r.ReadBytes((int)rawModeLength));
         var kind = (CommandKind)r.ReadInt32();
         return kind switch
         {
@@ -406,6 +511,51 @@ public sealed partial class SimulationWorld
             _ => throw new InvalidDataException($"Unknown command kind {kind}."),
         };
     }
+
+    // ---- Test hooks for save-invariant fixtures -------------------------------------------------
+    internal void AddCropTimerForTest(int settlementId, int plotIndex, long dueOffset = 10) =>
+        scheduler.Schedule(tick + dueOffset, 10, 0, new WorkItem(WorkKind.CropGrow, settlementId, plotIndex), isRequired: true);
+
+    internal void SetPlotGrowScheduledForTest(int settlementId, int plotIndex, bool scheduled, bool dropTimer = false)
+    {
+        settlements[settlementId - 1].Plots[plotIndex].GrowScheduled = scheduled;
+        if (dropTimer) scheduler.RemoveCropTimersForTest(settlementId, plotIndex);
+    }
+
+    internal void SetCarryForTest(long entityId, ResourceKind kind, int amount)
+    {
+        var e = entities[FindLive(entityId)];
+        e.CarryKind = kind;
+        e.CarryAmount = amount;
+    }
+
+    internal void SetTradeStateForTest(long entityId, int partner, bool onTrip, WorkGoal? goal = null, ActionKind? action = null)
+    {
+        var e = entities[FindLive(entityId)];
+        e.TradePartner = partner;
+        e.OnTrip = onTrip;
+        if (goal.HasValue) e.WorkGoal = goal.Value;
+        if (action.HasValue) { e.Mind.Kind = action.Value; e.Action = (int)action.Value; }
+    }
+
+    internal void SetSettlementCountersForTest(int settlementId, int members, int guards, int tradersOut)
+    {
+        var s = settlements[settlementId - 1];
+        s.Members = members;
+        s.Guards = guards;
+        s.TradersOut = tradersOut;
+    }
+
+    internal void SetReadingStateForTest(long entityId, long book, long since, ActionKind? action = null)
+    {
+        var e = entities[FindLive(entityId)];
+        e.ReadingBook = book;
+        e.ReadingSince = since;
+        if (action.HasValue) { e.Mind.Kind = action.Value; e.Action = (int)action.Value; }
+    }
+
+    internal void AddReadingProgressForTest(long entityId, long book, int pages) =>
+        entities[FindLive(entityId)].Reading.Add(new ReadingProgress { Book = book, Pages = pages });
 }
 
 /// <summary>

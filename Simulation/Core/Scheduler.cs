@@ -101,6 +101,15 @@ internal sealed class Scheduler
         runningTick = running;
     }
 
+    internal void RemoveCropTimersForTest(int settlementId, int plotIndex)
+    {
+        var kept = required.UnorderedItems
+            .Where(x => !(x.Element.Kind == WorkKind.CropGrow && x.Element.Subject == settlementId && x.Element.Token == plotIndex))
+            .ToList();
+        required.Clear();
+        foreach (var (element, priority) in kept) required.Enqueue(element, priority);
+    }
+
     public void WriteCanonical(BinaryWriter writer)
     {
         writer.Write(NextOrdinal);

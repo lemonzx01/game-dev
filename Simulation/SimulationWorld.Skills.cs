@@ -8,6 +8,9 @@ public sealed record SkillConfig(int XpPerLevelSquared = 100, int MaxLevel = 10,
     int XpPerHit = 20, int XpPerTradeUnit = 5, int ScholarBonusPercentPerLevel = 10, int BookPages = 300, int ReadSessionTicks = 100,
     int ReadScore = 100)
 {
+    public const int MaxScholarBonusPercentPerLevel = 1000;
+    public const int MaxSupportedLevel = 1000;
+
     public static SkillConfig Default { get; } = new();
 
     internal void Validate()
@@ -16,6 +19,8 @@ public sealed record SkillConfig(int XpPerLevelSquared = 100, int MaxLevel = 10,
             ArgumentOutOfRangeException.ThrowIfLessThan(v, 1);
         foreach (int v in new[] { XpPerHarvestUnit, XpPerGatherUnit, XpPerHit, XpPerTradeUnit, ScholarBonusPercentPerLevel })
             ArgumentOutOfRangeException.ThrowIfNegative(v);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(MaxLevel, MaxSupportedLevel);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(ScholarBonusPercentPerLevel, MaxScholarBonusPercentPerLevel);
     }
 
     internal void WriteCanonical(BinaryWriter w)
@@ -52,9 +57,17 @@ public sealed partial class SimulationWorld
     private void GainXp(EntityState e, Skill skill, long baseXp, long now)
     {
         if (baseXp <= 0) return;
-        long xp = skill == Skill.Scholarship ? baseXp : baseXp * (100 + SkillCfg.ScholarBonusPercentPerLevel * Level(e, Skill.Scholarship)) / 100;
+        int idx = (int)skill - 1;
+        long current = e.Skills[idx];
+        long remaining = long.MaxValue - current;
+        if (remaining <= 0) return;
+        Int128 scaled = skill == Skill.Scholarship
+            ? baseXp
+            : (Int128)baseXp * (100 + (Int128)SkillCfg.ScholarBonusPercentPerLevel * Level(e, Skill.Scholarship)) / 100;
+        long xp = scaled >= remaining ? remaining : (long)scaled;
+        if (xp <= 0) return;
         int before = Level(e, skill);
-        e.Skills[(int)skill - 1] += xp;
+        e.Skills[idx] = current + xp;
         int after = Level(e, skill);
         if (after > before) Emit(new WorldEvent(0, now, EventKinds.SkillLevelUp, 0, e.Id.Value, 0, e.X, e.Y, (int)skill, after));
     }
@@ -117,6 +130,47 @@ public sealed partial class SimulationWorld
         Emit(new WorldEvent(0, now, EventKinds.ReadProgress, 0, e.Id.Value, book, e.X, e.Y, finished ? 1 : 0, pages));
     }
 
+    private bool IsValidBookKey(long bookKey)
+    {
+        if (bookKey < 1000) return false;
+        long sid = bookKey / 1000;
+        long idx = bookKey % 1000;
+        return sid >= 1 && sid <= settlements.Count && idx >= 0 && idx < settlements[(int)sid - 1].Books;
+    }
+
+    private void ValidateEntityReading(EntityState e)
+    {
+        if (e.SettlementId == 0)
+        {
+            if (e.Reading.Count != 0 || e.ReadingBook != 0 || e.ReadingSince != 0)
+                throw new InvalidDataException("Non-member cannot have reading state.");
+            return;
+        }
+        if (e.Reading.Count > 0)
+        {
+            var seen = new HashSet<long>(e.Reading.Count);
+            foreach (var p in e.Reading)
+            {
+                if (!IsValidBookKey(p.Book)) throw new InvalidDataException("Reading progress references unknown book.");
+                if (!seen.Add(p.Book)) throw new InvalidDataException("Duplicate book key in reading list.");
+            }
+        }
+        if (e.ReadingSince != 0 || e.ReadingBook != 0)
+        {
+            if (e.LifeState != LifeStates.Alive || e.Mind.Kind != ActionKind.Read)
+                throw new InvalidDataException("Open reading session requires living reading member.");
+            if (e.ReadingSince < 1 || e.ReadingSince > tick)
+                throw new InvalidDataException("Reading session start tick invalid.");
+            if (!IsValidBookKey(e.ReadingBook) || e.ReadingBook / 1000 != e.SettlementId)
+                throw new InvalidDataException("Reading session book invalid.");
+            if (PagesRead(e, e.ReadingBook) >= SkillCfg.BookPages)
+                throw new InvalidDataException("Reading session on already-finished book.");
+            var home = settlements[e.SettlementId - 1];
+            if (e.X != home.X || e.Y != home.Y)
+                throw new InvalidDataException("Reading session outside town centre.");
+        }
+    }
+
     private static void WriteSkills(BinaryWriter w, EntityState e)
     {
         foreach (long xp in e.Skills) w.Write(xp);
@@ -133,12 +187,13 @@ public sealed partial class SimulationWorld
             e.Skills[i] = r.ReadInt64();
             if (e.Skills[i] < 0) throw new InvalidDataException("Skill XP negative.");
         }
-        int n = (int)r.ReadUInt32();
-        if (n > 1000) throw new InvalidDataException("Reading list too long.");
+        uint rawCount = r.ReadUInt32();
+        if (rawCount > 1000u) throw new InvalidDataException("Reading list too long.");
+        int n = (int)rawCount;
         for (int i = 0; i < n; i++)
         {
             var p = new ReadingProgress { Book = r.ReadInt64(), Pages = r.ReadInt32() };
-            if (p.Pages < 0 || p.Pages > SkillCfg.BookPages) throw new InvalidDataException("Reading progress invalid.");
+            if (p.Pages < 1 || p.Pages > SkillCfg.BookPages) throw new InvalidDataException("Reading progress invalid.");
             e.Reading.Add(p);
         }
         e.ReadingBook = r.ReadInt64();
