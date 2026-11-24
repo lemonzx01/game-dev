@@ -17,7 +17,7 @@ public partial class GodTools : Node2D
     [Export] public NodePath LabelPath = "../UI/GodLabel";
     [Export] public float CellSize = 16f;
 
-    private static readonly int[] SpeciesCycle = [SpeciesCatalog.Deer, SpeciesCatalog.Sheep, SpeciesCatalog.Rabbit, SpeciesCatalog.Wolf, SpeciesCatalog.Human, SpeciesCatalog.Demon];
+    private static readonly int[] SpeciesCycle = [SpeciesCatalog.Deer, SpeciesCatalog.Sheep, SpeciesCatalog.Rabbit, SpeciesCatalog.Wolf, SpeciesCatalog.Human, SpeciesCatalog.Demon, SpeciesCatalog.Dragon];
     private static readonly Faction[] FactionCycle = [Faction.Human, Faction.Demon];
     private static readonly Terrain[] TerrainCycle = [Terrain.Grass, Terrain.Forest, Terrain.Water, Terrain.Mountain, Terrain.Snow];
 

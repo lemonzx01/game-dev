@@ -55,6 +55,12 @@ public partial class InspectorPanel : Label
             var town = bridge.Settlements()[d.SettlementId - 1];
             sb.AppendLine($"lives in {town.Name}  job {d.Job}" + (d.CarryAmount > 0 ? $"  carrying {d.CarryAmount} {d.CarryKind}" : ""));
         }
+        if (bridge.Adventure(id) is { } a)
+        {
+            if (a.KnowsMagic) sb.AppendLine($"mana {a.Mana}/{a.MaxMana}  (talent {a.Aptitude})  spells: Firebolt, Heal");
+            if (a.TamedTo != 0) sb.AppendLine($"tamed by {bridge.Settlements()[a.TamedTo - 1].Name}" + (a.TamerId != 0 ? $" (bond with #{a.TamerId})" : ""));
+            else if (a.TamerId != 0) sb.AppendLine($"trust {a.Trust} toward #{a.TamerId}");
+        }
         if (bridge.Skills(id) is { } k)
         {
             var parts = new System.Collections.Generic.List<string>();

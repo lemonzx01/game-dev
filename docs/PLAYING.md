@@ -28,4 +28,13 @@ A 128×128 pixel-art world generated from seed 1 (placeholder art, `Assets/CREDI
 | Right click (God mode) | Spawn or paint on that tile (the world can refuse, e.g. painting a mountain on an animal) |
 | F5 / F9 | Quick save / quick load (`%APPDATA%\Godot\app_userdata\Fantasy World Simulator\saves\quicksave.fws`) |
 
-The bottom-right feed lists births, deaths (with cause and killer), attacks, your God actions and save/load results.
+The bottom-right feed lists births, deaths (with cause and killer), attacks, spells, tamings, your God actions and save/load results.
+
+## What people and animals can do (T015–T019)
+- Towns farm, gather, store, trade with coins and keep guards (one per 8 members). Idle townsfolk read the town book; finishing it makes them casters with mana (Firebolt at range, Heal for wounded townmates).
+- Villagers flee danger, but cornered or brave ones with friends nearby fight back. Damage depends on skill, health, allies and the target's toughness.
+- Idle townsfolk may feed nearby deer, rabbits or wolves from town food; the animal can refuse. With enough trust it is tamed by the town, stays nearby and is not treated as a threat.
+- **Dragon** (God spawn only: G, Q, Tab until Dragon): armoured, eats large game, everyone fears it, and it turns on whoever hurts it.
+- Effects show real events: fireball and impact for Firebolt, green light for Heal, impacts for hits, a sparkle for a tamed animal.
+
+Playtest checklist: `docs/PLAYTEST.md`. Known issues: `docs/KNOWN_ISSUES.md`.
