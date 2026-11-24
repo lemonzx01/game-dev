@@ -18,7 +18,7 @@ public sealed partial class SimulationWorld
 {
     private static readonly byte[] Magic = "FWSSAVE\0"u8.ToArray();
     public const uint SaveFormatVersion = 1;
-    public const uint StateSchema = 10;
+    public const uint StateSchema = 11;
     private static readonly JsonSerializerOptions OptionsJson = new() { WriteIndented = false };
 
     // ---- Save ----------------------------------------------------------------------------------
@@ -146,6 +146,7 @@ public sealed partial class SimulationWorld
         w.Write(p.Relationships.Count);
         foreach (var rel in p.Relationships) { w.Write(rel.Other); w.Write(rel.Affinity); w.Write(rel.Familiarity); w.Write(rel.LastTick); }
         w.Write(m.NoWorkUntil); w.Write(e.SettlementId); w.Write((int)e.Job); w.Write((int)e.WorkGoal); w.Write((byte)e.CarryKind); w.Write(e.CarryAmount);
+        w.Write(e.TradePartner); w.Write(e.OnTrip);
     }
 
     // ---- Load ----------------------------------------------------------------------------------
@@ -327,7 +328,7 @@ public sealed partial class SimulationWorld
         }
         ReadSettlements(r, Count);
         foreach (var e in entities)
-            Require(e.SettlementId <= settlements.Count, "Member of an unknown settlement.");
+            Require(e.SettlementId <= settlements.Count && e.TradePartner <= settlements.Count && e.TradePartner >= 0, "Member or trade partner of an unknown settlement.");
         snapshot = null;
     }
 
@@ -370,6 +371,7 @@ public sealed partial class SimulationWorld
         e.Mind.NoWorkUntil = r.ReadInt64();
         e.SettlementId = r.ReadInt32(); e.Job = (Job)r.ReadInt32(); e.WorkGoal = (WorkGoal)r.ReadInt32();
         e.CarryKind = (ResourceKind)r.ReadByte(); e.CarryAmount = r.ReadInt32();
+        e.TradePartner = r.ReadInt32(); e.OnTrip = r.ReadBoolean();
         Require(e.CarryAmount >= 0 && e.SettlementId >= 0, "Carried amount or settlement invalid.");
         return e;
     }

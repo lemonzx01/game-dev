@@ -20,6 +20,8 @@ internal sealed class EntityState
     public WorkGoal WorkGoal;
     public ResourceKind CarryKind;
     public int CarryAmount;
+    public int TradePartner;           // settlement id the trader is selling to (0 = none)
+    public bool OnTrip;                // counted in the home settlement's TradersOut
     public long BirthTick;
     public VitalsAnchor Vitals;
     public long ScheduledDeathTick = long.MaxValue; // only the item due at this tick is live; older items are stale
@@ -93,6 +95,7 @@ public sealed partial class SimulationWorld
         e.LifeState = LifeStates.Dead;
         StartIdle(e, now);  // actions invalidated immediately (pending step superseded)
         DropCarry(e, now);
+        LeaveSettlement(e);
         e.Mind.ThinkToken++; // pending think superseded
         grid.Remove(e.Id.Value, e.X, e.Y);
         e.DeathTick = now;
@@ -243,6 +246,8 @@ public sealed partial class SimulationWorld
             writer.Write((int)e.WorkGoal);
             writer.Write((byte)e.CarryKind);
             writer.Write(e.CarryAmount);
+            writer.Write(e.TradePartner);
+            writer.Write(e.OnTrip);
         }
         writer.Write((uint)deaths.Count);
         foreach (var r in deaths)

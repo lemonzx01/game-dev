@@ -66,6 +66,14 @@ public static class EventKinds
     public const int Gathered = 213;
     /// <summary>Actor = member who died carrying, Reason = ResourceKind, Amount = units lost (explicit sink).</summary>
     public const int CarryLost = 214;
+    /// <summary>Actor = trader, Target = home settlement, Reason = ResourceKind, Amount = units taken from storage.</summary>
+    public const int TradeLoaded = 215;
+    /// <summary>Actor = trader, Target = buyer settlement, Reason = ResourceKind, Amount = units moved into the buyer's storage.</summary>
+    public const int TradeSold = 216;
+    /// <summary>Actor = buyer settlement, Target = seller settlement, Reason = unit price, Amount = coins moved.</summary>
+    public const int TradePaid = 217;
+    /// <summary>Actor = guard, Target = intruder, Reason = settlement id.</summary>
+    public const int GuardAlert = 218;
     /// <summary>Actor = EntityId, Target = threat id (Flee), X/Y = position, Reason = <see cref="ActionKind"/>.</summary>
     public const int ActionStarted = 300;
     /// <summary>Actor = EntityId, Reason = <see cref="ActionKind"/> whose path search found nothing reachable.</summary>

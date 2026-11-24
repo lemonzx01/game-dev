@@ -67,6 +67,9 @@ public partial class EventFeed : Label
         EventKinds.EntityDied => $"t{e.Tick}: {SpeciesOf(e.Target)} #{e.Target} died ({(DeathCause)e.Reason})" + (e.Actor != 0 ? $" by #{e.Actor}" : ""),
         EventKinds.Attacked => $"t{e.Tick}: #{e.Actor} attacked #{e.Target}",
         EventKinds.SettlementFounded => $"t{e.Tick}: {(Faction)e.Reason} settlement #{e.Target} founded at {e.X},{e.Y}",
+        EventKinds.TradeSold => $"t{e.Tick}: trader #{e.Actor} sold {e.Amount} {(ResourceKind)e.Reason} to settlement #{e.Target}",
+        EventKinds.TradePaid => $"t{e.Tick}: settlement #{e.Actor} paid {e.Amount} coins to #{e.Target}",
+        EventKinds.GuardAlert => $"t{e.Tick}: guard #{e.Actor} defends against #{e.Target}",
         EventKinds.CarryLost => $"t{e.Tick}: #{e.Actor} died carrying {e.Amount} {(ResourceKind)e.Reason}",
         EventKinds.EventsDropped => $"t{e.Tick}: {e.Amount} minor events skipped",
         _ => null, // applied commands, eating, drinking, wandering stay out of the feed (inspector shows them)
