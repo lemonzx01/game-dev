@@ -46,6 +46,27 @@ internal sealed class EventLog
         return new(PageStatus.Ok, oldest, Latest, records.MoveToImmutable(), after + size);
     }
 
+    /// <summary>Retained entries, oldest first (save/load).</summary>
+    internal IEnumerable<WorldEvent> Entries()
+    {
+        for (int i = 0; i < count; i++) yield return ring[(int)(((long)first + i) % Capacity)];
+    }
+
+    /// <summary>Restores retained entries; sequences must be contiguous and end at nextSequence − 1.</summary>
+    internal void Restore(IReadOnlyList<WorldEvent> entries, long nextSequence)
+    {
+        if (entries.Count > Capacity || nextSequence < 1 || nextSequence - 1 < entries.Count)
+            throw new InvalidDataException("Event log bounds invalid.");
+        for (int i = 0; i < entries.Count; i++)
+            if (entries[i].EventSequence != nextSequence - entries.Count + i)
+                throw new InvalidDataException("Event log sequence is not contiguous.");
+        Array.Clear(ring);
+        for (int i = 0; i < entries.Count; i++) ring[i] = entries[i];
+        first = 0;
+        count = entries.Count;
+        NextSequence = nextSequence;
+    }
+
     public void WriteCanonical(BinaryWriter writer)
     {
         writer.Write(NextSequence - count);

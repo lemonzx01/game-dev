@@ -18,7 +18,8 @@ using System.Reflection.PortableExecutable;
     .. T006Tests.Cases,
     .. T009Tests.Cases,
     .. T011Tests.Cases,
-    .. T010Tests.Cases
+    .. T010Tests.Cases,
+    .. T013Tests.Cases
 ];
 int failures = 0;
 foreach (var test in cases)

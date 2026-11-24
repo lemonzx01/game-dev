@@ -339,7 +339,7 @@ public sealed partial class SimulationWorld : ISimulation
         using var bytes = new MemoryStream();
         using var writer = new BinaryWriter(bytes);
         // 1. Versions, identity, configuration, clock.
-        writer.Write(8u); // schema
+        writer.Write(StateSchema); // schema (shared with the save format; bump both together)
         writer.Write(1u); // RNG version
         writer.Write(worldId.Value);
         writer.Write(options.Seed);

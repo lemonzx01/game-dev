@@ -74,6 +74,27 @@ internal sealed class Scheduler
         }
     }
 
+    internal long RunningTick => runningTick;
+
+    /// <summary>All pending work with its key and queue (save/load).</summary>
+    internal IEnumerable<(WorkItem Item, WorkKey Key, bool Required)> Pending() =>
+        required.UnorderedItems.Select(e => (e.Element, e.Priority, true))
+            .Concat(discretionary.UnorderedItems.Select(e => (e.Element, e.Priority, false)))
+            .OrderBy(e => e.Priority);
+
+    internal void Restore(long nextOrdinal, long running, IEnumerable<(WorkItem Item, WorkKey Key, bool Required)> items)
+    {
+        required.Clear();
+        discretionary.Clear();
+        foreach (var (item, key, isRequired) in items)
+        {
+            if (key.Ordinal >= nextOrdinal || key.Ordinal < 1) throw new InvalidDataException("Scheduler ordinal out of range.");
+            (isRequired ? required : discretionary).Enqueue(item, key);
+        }
+        NextOrdinal = nextOrdinal;
+        runningTick = running;
+    }
+
     public void WriteCanonical(BinaryWriter writer)
     {
         writer.Write(NextOrdinal);

@@ -13,6 +13,13 @@ public sealed class EntityIds
         Next = next;
     }
 
+    /// <summary>Save/load: restores the counter; never lowers it below 1.</summary>
+    internal void Restore(long next)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(next, 1);
+        Next = next;
+    }
+
     public EntityId Allocate()
     {
         long id = Next;
@@ -23,7 +30,7 @@ public sealed class EntityIds
 
 public sealed class RandomStream
 {
-    public ulong State { get; private set; }
+    public ulong State { get; internal set; } // settable for save/load restore
 
     public RandomStream(ulong seed, uint systemTag, ulong scopeId)
     {
