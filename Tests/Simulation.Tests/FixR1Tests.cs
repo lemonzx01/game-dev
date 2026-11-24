@@ -14,6 +14,8 @@ internal static class FixR1Tests
         ("FIX-R1 #2 long routes obey combined node budget, count expansions, serve locals, replay identically", LongRouteBudgetAndReplay),
         ("FIX-R1 #3 flooding empty farm plot or centre is rejected and work continues", FloodedPlotAndCentreRejected),
         ("FIX-R1 #4 guard promotion defers until carried load is deposited", PromotionDoesNotStrandCarriedLoad),
+        ("FIX-R1 #5 max CarryCapacity with skill bonus does not overflow negative", CarryCapacityNoSignedOverflow),
+        ("FIX-R1 #6 scholarship XP bonus rejects extreme tuning and saturates at long.MaxValue", ScholarshipBonusXpNoOverflow),
     ];
 
     private static void Check(bool ok, string message)
@@ -302,5 +304,141 @@ internal static class FixR1Tests
         Check(details.CarryAmount == 0, $"no stranded cargo (carry={details.CarryAmount})");
         Check(details.Job == Job.Guard && world.ReadSettlements()[0].Guards == 1, $"worker eventually replaced guard (job={details.Job}, guards={world.ReadSettlements()[0].Guards})");
         Check(world.ReadSettlements()[0].Food == harvestedAmount, $"exact town food {harvestedAmount}, got {world.ReadSettlements()[0].Food}");
+    }
+
+    // ---- Finding 5 ------------------------------------------------------------------------------
+
+    private static void CarryCapacityNoSignedOverflow()
+    {
+        // Part A: farm plot with 5 units, CarryCapacity = int.MaxValue, Farming level 2.
+        var rows = Enumerable.Range(0, 16).Select(y => y is 0 or 15 ? new string('^', 16) : "^" + new string('.', 14) + "^").ToList();
+        var plotWorld = new SimulationWorld(new SimulationOptions
+        {
+            WorldId = W,
+            Seed = 505,
+            MapWidth = 16,
+            MapHeight = 16,
+            Map = MapOverride.FromRows(rows),
+            Species = Default,
+            Vitals = new VitalsConfig(0, 0, 0, 0, 0, 250_000, 100_000, 4),
+            Mind = MindConfig.Default with { FatiguePerTick = 0 },
+            Settlements = SettlementConfig.Default with { CarryCapacity = int.MaxValue, FarmPlots = 1, CropMax = 10, CropGrowTicks = 1_000_000, WoodTarget = 0, FoodTarget = 60 },
+            Grants = ImmutableSortedDictionary<long, AuthorityGrant>.Empty.Add(God, AuthorityGrant.God),
+        });
+        plotWorld.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 8, 8, Faction.Human, "Farms"));
+        plotWorld.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 8, 8, Human));
+        plotWorld.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 8, 8, Human));
+        plotWorld.Step();
+        foreach (var row in plotWorld.ReadSnapshot().Chunks.SelectMany(c => c))
+            plotWorld.SetSkillForTest(row.Id.Value, Skill.Farming, 400); // level 2
+        long cursorA = plotWorld.ReadEvents(0, 1).LatestSequence;
+        var eventsA = new List<WorldEvent>();
+        for (int t = 0; t < 120 && !eventsA.Any(e => e.Kind == EventKinds.Harvested); t++)
+        {
+            eventsA.AddRange(Run(plotWorld, 1, ref cursorA));
+        }
+        var harvest = eventsA.FirstOrDefault(e => e.Kind == EventKinds.Harvested);
+        Check(harvest.Kind == EventKinds.Harvested && harvest.Amount == 5, $"expected 5 harvested from plot, got {harvest.Amount}");
+        Check(plotWorld.ReadFarmPlots(1)[0].Crop == 0, $"expected zero crop remainder, got {plotWorld.ReadFarmPlots(1)[0].Crop}");
+        Check(plotWorld.ReadEntityDetails(W, new EntityId(harvest.Actor))!.CarryAmount >= 0, "nonnegative cargo after plot harvest");
+        eventsA.AddRange(Run(plotWorld, 60, ref cursorA));
+        Check(plotWorld.ReadSettlements()[0].Food == 5, $"expected 5 food delivered, got {plotWorld.ReadSettlements()[0].Food}");
+
+        // Part B: wild food node with 5 units, CarryCapacity = int.MaxValue, Foraging level 2.
+        var nodeWorld = new SimulationWorld(new SimulationOptions
+        {
+            WorldId = W,
+            Seed = 506,
+            MapWidth = 16,
+            MapHeight = 16,
+            Map = MapOverride.FromRows(rows, new ResourcePlacement(10, 8, ResourceKind.Food, 5)),
+            Species = Default,
+            Vitals = new VitalsConfig(0, 0, 0, 0, 0, 250_000, 100_000, 4),
+            Mind = MindConfig.Default with { FatiguePerTick = 0 },
+            Settlements = SettlementConfig.Default with { CarryCapacity = int.MaxValue, FarmPlots = 0, WoodTarget = 0, FoodTarget = 60 },
+            Resources = ResourceConfig.Default with { Food = new ResourceRule(20, 0, 1000) },
+            Grants = ImmutableSortedDictionary<long, AuthorityGrant>.Empty.Add(God, AuthorityGrant.God),
+        });
+        nodeWorld.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 8, 8, Faction.Human, "Wilds"));
+        nodeWorld.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 8, 8, Human));
+        nodeWorld.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 8, 8, Human));
+        nodeWorld.Step();
+        foreach (var row in nodeWorld.ReadSnapshot().Chunks.SelectMany(c => c))
+            nodeWorld.SetSkillForTest(row.Id.Value, Skill.Foraging, 400); // level 2
+        long cursorB = nodeWorld.ReadEvents(0, 1).LatestSequence;
+        var eventsB = new List<WorldEvent>();
+        for (int t = 0; t < 120 && !eventsB.Any(e => e.Kind == EventKinds.Gathered); t++)
+        {
+            eventsB.AddRange(Run(nodeWorld, 1, ref cursorB));
+        }
+        var gather = eventsB.FirstOrDefault(e => e.Kind == EventKinds.Gathered);
+        Check(gather.Kind == EventKinds.Gathered && gather.Amount == 5, $"expected 5 gathered from node, got {gather.Amount}");
+        Check(nodeWorld.ReadResource(10, 8, ResourceKind.Food)!.Value.Amount == 0, $"expected zero node remainder, got {nodeWorld.ReadResource(10, 8, ResourceKind.Food)!.Value.Amount}");
+        Check(nodeWorld.ReadEntityDetails(W, new EntityId(gather.Actor))!.CarryAmount >= 0, "nonnegative cargo after node gather");
+        eventsB.AddRange(Run(nodeWorld, 60, ref cursorB));
+        Check(nodeWorld.ReadSettlements()[0].Food == 5, $"expected 5 food delivered from node, got {nodeWorld.ReadSettlements()[0].Food}");
+    }
+
+    // ---- Finding 6 ------------------------------------------------------------------------------
+
+    private static void ScholarshipBonusXpNoOverflow()
+    {
+        // Reject unsupported ScholarBonusPercentPerLevel (above cap and int.MaxValue).
+        foreach (int invalid in new[] { SkillConfig.MaxScholarBonusPercentPerLevel + 1, int.MaxValue })
+        {
+            bool rejected = false;
+            try
+            {
+                _ = new SimulationWorld(new SimulationOptions
+                {
+                    WorldId = W,
+                    Seed = 606,
+                    Skills = SkillConfig.Default with { ScholarBonusPercentPerLevel = invalid },
+                });
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                rejected = true;
+            }
+            Check(rejected, $"ScholarBonusPercentPerLevel={invalid} must be rejected");
+        }
+
+        // Exercise largest accepted bonus and Farming XP near long.MaxValue; XP must saturate monotonically and stay loadable.
+        var rows = Enumerable.Range(0, 16).Select(y => y is 0 or 15 ? new string('^', 16) : "^" + new string('.', 14) + "^").ToList();
+        var world = new SimulationWorld(new SimulationOptions
+        {
+            WorldId = W,
+            Seed = 607,
+            MapWidth = 16,
+            MapHeight = 16,
+            Map = MapOverride.FromRows(rows),
+            Species = Default,
+            Vitals = new VitalsConfig(0, 0, 0, 0, 0, 250_000, 100_000, 4),
+            Mind = MindConfig.Default with { FatiguePerTick = 0 },
+            Settlements = SettlementConfig.Default with { FarmPlots = 1, WoodTarget = 0, FoodTarget = 60 },
+            Skills = SkillConfig.Default with { ScholarBonusPercentPerLevel = SkillConfig.MaxScholarBonusPercentPerLevel },
+            Grants = ImmutableSortedDictionary<long, AuthorityGrant>.Empty.Add(God, AuthorityGrant.God),
+        });
+        world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 8, 8, Faction.Human, "Academy"));
+        world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 8, 8, Human));
+        world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 8, 8, Human));
+        world.Step();
+        foreach (var row in world.ReadSnapshot().Chunks.SelectMany(c => c))
+        {
+            world.SetSkillForTest(row.Id.Value, Skill.Scholarship, 10_000); // max level 10
+            world.SetSkillForTest(row.Id.Value, Skill.Farming, long.MaxValue - 5);
+        }
+        long cursor = world.ReadEvents(0, 1).LatestSequence;
+        var events = Run(world, 80, ref cursor);
+        var harvest = events.FirstOrDefault(e => e.Kind == EventKinds.Harvested);
+        Check(harvest.Kind == EventKinds.Harvested, "expected harvest XP trigger");
+        var skills = world.ReadSkills(W, new EntityId(harvest.Actor))!;
+        Check(skills.Farming == long.MaxValue, $"XP should saturate cleanly at long.MaxValue, got {skills.Farming}");
+
+        using var ms = new MemoryStream();
+        world.Save(ms);
+        var loaded = SimulationWorld.Load(new MemoryStream(ms.ToArray()));
+        Check(loaded.StateHash() == world.StateHash(), "saturated XP checkpoint loads cleanly");
+        Check(loaded.ReadSkills(W, new EntityId(harvest.Actor))!.Farming == long.MaxValue, "loaded XP preserved");
     }
 }

@@ -229,7 +229,8 @@ public sealed partial class SimulationWorld
             case WorkGoal.Harvest:
                 if (PlotAt(cell) is not { } hit || hit.Town != s || s.Plots[hit.Index].Crop <= 0) break;
                 var plot = s.Plots[hit.Index];
-                int crop = Math.Min(plot.Crop, capacity + Level(e, Skill.Farming) / 2); // skilled farmers bring more
+                int crop = (int)Math.Min(plot.Crop, (long)capacity + Level(e, Skill.Farming) / 2); // skilled farmers bring more
+                if (crop <= 0) break;
                 plot.Crop -= crop;
                 Load(e, ResourceKind.Food, crop);
                 ScheduleCrop(s, hit.Index, now);
@@ -252,7 +253,8 @@ public sealed partial class SimulationWorld
                 if (node < 0 || resources[node].Amount <= 0) break;
                 ref var stock = ref resources[node];
                 var skill = kind == ResourceKind.Food ? Skill.Foraging : Skill.Woodcutting;
-                int take = Math.Min(stock.Amount, capacity + Level(e, skill) / 2);
+                int take = (int)Math.Min(stock.Amount, (long)capacity + Level(e, skill) / 2);
+                if (take <= 0) break;
                 stock.Amount -= take;
                 Load(e, kind, take);
                 ScheduleRegrowth(node, now);

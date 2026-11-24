@@ -8,6 +8,9 @@ public sealed record SkillConfig(int XpPerLevelSquared = 100, int MaxLevel = 10,
     int XpPerHit = 20, int XpPerTradeUnit = 5, int ScholarBonusPercentPerLevel = 10, int BookPages = 300, int ReadSessionTicks = 100,
     int ReadScore = 100)
 {
+    public const int MaxScholarBonusPercentPerLevel = 1000;
+    public const int MaxSupportedLevel = 1000;
+
     public static SkillConfig Default { get; } = new();
 
     internal void Validate()
@@ -16,6 +19,8 @@ public sealed record SkillConfig(int XpPerLevelSquared = 100, int MaxLevel = 10,
             ArgumentOutOfRangeException.ThrowIfLessThan(v, 1);
         foreach (int v in new[] { XpPerHarvestUnit, XpPerGatherUnit, XpPerHit, XpPerTradeUnit, ScholarBonusPercentPerLevel })
             ArgumentOutOfRangeException.ThrowIfNegative(v);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(MaxLevel, MaxSupportedLevel);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(ScholarBonusPercentPerLevel, MaxScholarBonusPercentPerLevel);
     }
 
     internal void WriteCanonical(BinaryWriter w)
@@ -52,9 +57,17 @@ public sealed partial class SimulationWorld
     private void GainXp(EntityState e, Skill skill, long baseXp, long now)
     {
         if (baseXp <= 0) return;
-        long xp = skill == Skill.Scholarship ? baseXp : baseXp * (100 + SkillCfg.ScholarBonusPercentPerLevel * Level(e, Skill.Scholarship)) / 100;
+        int idx = (int)skill - 1;
+        long current = e.Skills[idx];
+        long remaining = long.MaxValue - current;
+        if (remaining <= 0) return;
+        Int128 scaled = skill == Skill.Scholarship
+            ? baseXp
+            : (Int128)baseXp * (100 + (Int128)SkillCfg.ScholarBonusPercentPerLevel * Level(e, Skill.Scholarship)) / 100;
+        long xp = scaled >= remaining ? remaining : (long)scaled;
+        if (xp <= 0) return;
         int before = Level(e, skill);
-        e.Skills[(int)skill - 1] += xp;
+        e.Skills[idx] = current + xp;
         int after = Level(e, skill);
         if (after > before) Emit(new WorldEvent(0, now, EventKinds.SkillLevelUp, 0, e.Id.Value, 0, e.X, e.Y, (int)skill, after));
     }
