@@ -13,7 +13,8 @@ public enum SleepPattern { None = 0, Diurnal = 1, Nocturnal = 2 }
 public sealed record BodyConfig(bool Enabled = false, int DiurnalStart = 833, int DiurnalEnd = 208, int NocturnalStart = 375, int NocturnalEnd = 667,
     int SleepScore = 280, int FatigueRecoveryMultiplier = 2, int RestHealPercent = 250, int SleepHealPercent = 400,
     int AwareDistance = 2, int NoiseRadius = 6, bool GuardsKeepWatch = true,
-    long InjuredRestHealth = 500_000, long RecoveredHealth = 800_000, int InjuredRestScore = 220, bool SeasonalBreeding = true)
+    long InjuredRestHealth = 500_000, long RecoveredHealth = 800_000, int InjuredRestScore = 220, bool SeasonalBreeding = true,
+    int RoamSteps = 12, int RoamHeadingTicks = 600, bool PredatorsAvoidTowns = true)
 {
     public static BodyConfig Default { get; } = new();
 
@@ -39,6 +40,9 @@ public sealed record BodyConfig(bool Enabled = false, int DiurnalStart = 833, in
         ArgumentOutOfRangeException.ThrowIfGreaterThan(RecoveredHealth, VitalsConfig.MaxHealth);
         if (RecoveredHealth < InjuredRestHealth) throw new ArgumentException("RecoveredHealth must be at least InjuredRestHealth.");
         ArgumentOutOfRangeException.ThrowIfLessThan(InjuredRestScore, 1);
+        ArgumentOutOfRangeException.ThrowIfNegative(RoamSteps);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(RoamSteps, 64);
+        ArgumentOutOfRangeException.ThrowIfLessThan(RoamHeadingTicks, 1);
     }
 
     internal void WriteCanonical(BinaryWriter w)
@@ -52,6 +56,9 @@ public sealed record BodyConfig(bool Enabled = false, int DiurnalStart = 833, in
         w.Write(RecoveredHealth);
         w.Write(InjuredRestScore);
         w.Write(SeasonalBreeding);
+        w.Write(RoamSteps);
+        w.Write(RoamHeadingTicks);
+        w.Write(PredatorsAvoidTowns);
     }
 
     /// <summary>FIX-R3 #13: with Body on, a positive base rate must not scale down to zero for any species or rest state.</summary>
@@ -83,7 +90,7 @@ public static class Realism
     {
         Body = BodyConfig.Realistic,
         Ecology = o.Ecology with { CarcassDecayTicks = 4800 },
-        Climate = o.Climate with { WinterGrowthPercent = 40, MinGrowthTemperature = -3 }, // hardy winter forage grows on milder hours
+        Climate = o.Climate with { WinterGrowthPercent = 60, MinGrowthTemperature = -3 }, // hardy winter forage grows on milder hours
         Resources = o.Resources with { Food = o.Resources.Food with { RegrowIntervalTicks = 240 } },
     };
 }

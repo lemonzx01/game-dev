@@ -558,6 +558,7 @@ public sealed partial class SimulationWorld
     {
         yielded = false;
         if (kind == ActionKind.Read && (OnCooldown(e.Mind, kind, now) || !WantsToRead(e, e.Vitals.At(now, options.Vitals)))) return false;
+        if (kind is ActionKind.Rest or ActionKind.Sleep && AvoidsTowns(e) && InTownGrounds(e.X, e.Y)) return false; // RP: bed down outside town
         int[]? path = null;
         int wanderCell = -1;
         long huntTarget = 0;
@@ -607,6 +608,8 @@ public sealed partial class SimulationWorld
                 if (!WantsToSleep(e, e.Vitals.At(now, options.Vitals), now)) return false;
                 break;
             case ActionKind.Wander:
+                if (AvoidsTowns(e) && InTownGrounds(e.X, e.Y) && LeaveTownPath(e, now) is { Length: > 0 } leave) { path = leave; break; } // RP
+                if (RoamsForNeeds(e, now) && RoamPath(e, now) is { Length: > 0 } roam) { path = roam; break; } // RP: search widely for prey, water, food
                 wanderCell = WanderStep(e);
                 if (wanderCell < 0) return false;
                 break;
@@ -617,7 +620,7 @@ public sealed partial class SimulationWorld
         e.Mind.Kind = kind;    // FIX-R3 #1: the incoming kind first, so the rest/heal rates derive from it (as after load)
         e.Action = kind == ActionKind.Sleep ? (int)ActionKind.Wander : (int)kind; // #17: Sleep is published once asleep
         SetResting(e, kind == ActionKind.Rest, now);
-        e.Mind.Path = kind == ActionKind.Wander ? [wanderCell] : path;
+        e.Mind.Path = kind == ActionKind.Wander ? path ?? [wanderCell] : path;
         e.Mind.PathIndex = 0;
         e.Mind.TargetEntity = kind is ActionKind.Hunt or ActionKind.Mate or ActionKind.Defend or ActionKind.Tame or ActionKind.Gather ? huntTarget : threat?.Id.Value ?? 0;
         e.Mind.HuntUntil = now + (kind switch { ActionKind.Mate => options.Ecology.MateGiveUpTicks, ActionKind.Tame => TameCfg.GiveUpTicks, _ => options.Ecology.HuntGiveUpTicks });
@@ -804,6 +807,7 @@ public sealed partial class SimulationWorld
                 int x = e.X + dx, y = e.Y + dy;
                 if (!InBounds(x, y) || !TerrainRules.IsPassable(terrain[Cell(x, y)]) || !WithinLeash(e, x, y)) continue;
                 if (pass == 0 && RemembersDangerNear(e, x, y, now)) continue;
+                if (pass == 0 && AvoidsTowns(e) && InTownGrounds(x, y) && !InTownGrounds(e.X, e.Y)) continue; // RP: wild predators keep out of towns
                 return Cell(x, y);
             }
         return -1;

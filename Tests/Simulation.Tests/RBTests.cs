@@ -59,7 +59,7 @@ internal static class RBTests
         var o = Realism.Apply(new SimulationOptions { WorldId = W });
         Check(o.Body.Enabled && o.Body.SeasonalBreeding, "Body and breeding seasons on");
         Check(o.Ecology.CarcassDecayTicks == 4800, "carcasses last two days");
-        Check(o.Climate.WinterGrowthPercent == 40 && o.Climate.MinGrowthTemperature == -3, "winter forage");
+        Check(o.Climate.WinterGrowthPercent == 60 && o.Climate.MinGrowthTemperature == -3, "winter forage");
         Check(o.Resources.Food.RegrowIntervalTicks == 240, "berry regrowth");
         var plain = new SimulationOptions { WorldId = W };
         Check(!plain.Body.Enabled && plain.Ecology.CarcassDecayTicks == EcologyConfig.Default.CarcassDecayTicks, "scenario defaults are untouched");

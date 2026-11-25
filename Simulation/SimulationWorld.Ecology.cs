@@ -98,6 +98,7 @@ public sealed partial class SimulationWorld
         var hunts = SpeciesOf(hunter)?.Hunts ?? [];
         if (!hunts.Contains(prey.Species) || !CanHarm(hunter, prey)) return false;
         if (hunter.TamedTo != 0 && (SpeciesOf(prey)?.Domestic == true || prey.TamedTo != 0)) return false; // tamed hunters spare livestock and pets
+        if (AvoidsTowns(hunter) && InTownGrounds(prey.X, prey.Y)) return false; // RP: wild predators keep away from people
         return true;
     }
 

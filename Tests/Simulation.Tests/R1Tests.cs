@@ -23,7 +23,7 @@ internal static class R1Tests
         if (!ok) throw new Exception(message);
     }
 
-    private static SimulationWorld World(VitalsConfig vitals, bool body = true)
+    private static SimulationWorld World(VitalsConfig vitals, bool body = true, BodyConfig? bodyConfig = null)
     {
         var rows = Enumerable.Range(0, 20).Select(y => y is 0 or 19 ? new string('^', 50) : "^" + new string('.', 48) + "^").ToList();
         return new SimulationWorld(new SimulationOptions
@@ -32,7 +32,7 @@ internal static class R1Tests
             Vitals = vitals,
             Mind = MindConfig.Default with { FatiguePerTick = 0 },
             Settlements = SettlementConfig.Default with { FarmPlots = 0 },
-            Body = body ? BodyConfig.Realistic : BodyConfig.Default,
+            Body = bodyConfig ?? (body ? BodyConfig.Realistic : BodyConfig.Default),
             Magic = MagicConfig.Default with { MinScholarshipLevel = 10 }, // nobody becomes a healer in these scenarios
             Grants = ImmutableSortedDictionary<long, AuthorityGrant>.Empty.Add(God, AuthorityGrant.God),
         });
@@ -94,9 +94,9 @@ internal static class R1Tests
     }
 
     // A human town at (25,10) with 7 members (one guard) and two wolves in the open.
-    private static (SimulationWorld World, long Cursor, long Guard, List<long> Others, List<long> Wolves) Town(VitalsConfig? vitals = null)
+    private static (SimulationWorld World, long Cursor, long Guard, List<long> Others, List<long> Wolves) Town(VitalsConfig? vitals = null, BodyConfig? bodyConfig = null)
     {
-        var world = World(vitals ?? NoNeeds);
+        var world = World(vitals ?? NoNeeds, bodyConfig: bodyConfig);
         world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 25, 10, Faction.Human, "Lamplight"));
         for (int k = 0; k < 7; k++) world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 22 + k, 12, Human));
         world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 4, 4, Wolf));
@@ -131,7 +131,8 @@ internal static class R1Tests
 
     private static void WokenByFight()
     {
-        var (world, cursor, guard, others, _) = Town();
+        // RP: a town-shy wild wolf would slip out of the grounds before the guard reached it; this one walks in on purpose.
+        var (world, cursor, guard, others, _) = Town(bodyConfig: BodyConfig.Realistic with { PredatorsAvoidTowns = false });
         RunTo(world, 250, ref cursor);
         Check(others.All(world.IsAsleepForTest), "everyone asleep before the fight");
         // A wolf 4 tiles from the sleepers is beyond their awareness: nobody flees until the fight starts.
