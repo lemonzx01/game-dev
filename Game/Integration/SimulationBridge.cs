@@ -52,12 +52,12 @@ public partial class SimulationBridge : Node
     public override void _Ready()
     {
         Clock = new HostClock(TicksPerSecond, MaxTicksPerFrame, System.Math.Max(64, MaxTicksPerFrame));
-        simulation = new SimulationWorld(new SimulationOptions
+        // Realism preset (R1 bodies/sleep, RB ecology: breeding seasons, winter forage, lasting carcasses); WorldReport uses the same.
+        simulation = new SimulationWorld(Realism.Apply(new SimulationOptions
         {
             WorldId = World, Seed = Seed, Species = SpeciesCatalog.Default,
-            Body = BodyConfig.Realistic, // R1: species bodies, sleep/wake cycle, faster healing at rest
             Grants = ImmutableSortedDictionary<long, AuthorityGrant>.Empty.Add(ScenarioAuthor, AuthorityGrant.God)
-        });
+        }));
         Map = simulation.ReadMap();
         if (StarterAnimals <= 0) SpawnOneNearCenter();
         else

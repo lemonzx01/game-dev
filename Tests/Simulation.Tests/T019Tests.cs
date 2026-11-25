@@ -293,6 +293,7 @@ internal static class T019Tests
         // so it cannot bolt beyond town radius 10 where the leashed wolf cannot follow (FIX-R2 #8).
         world.SubmitCommand(new SetTerrainCommand(W, God, CommandModes.God, 31, 1, Terrain.Mountain));
         world.SubmitCommand(new SetTerrainCommand(W, God, CommandModes.God, 30, 2, Terrain.Mountain));
+        Run(world, 1, ref cursor); // apply the rocks first, so the next spawn's CommandApplied is the rabbit's
         long rabbit = Spawn(world, 29, 1, Rabbit, ref cursor);
         long deer = Spawn(world, 27, 9, Deer, ref cursor);
         var events = Run(world, 1200, ref cursor);
@@ -300,7 +301,8 @@ internal static class T019Tests
         Check(!events.Any(e => e.Kind == EventKinds.ActionStarted && e.Reason == (int)ActionKind.Flee && e.Target == wolf && others.Append(guard).Contains(e.Actor)), "its people do not flee the town's wolf");
         Check(!events.Any(e => e.Kind == EventKinds.Attacked && e.Actor == wolf && e.Target == sheep), "the tamed wolf spares livestock");
         Check(!events.Any(e => e.Kind == EventKinds.Attacked && e.Actor == wolf && others.Append(guard).Contains(e.Target)), "and never attacks its people");
-        Check(events.Any(e => e.Kind == EventKinds.Attacked && e.Actor == wolf && (e.Target == rabbit || e.Target == deer)), "it still hunts wild game when hungry");
+        // RB: deer and rabbits are as fast as wolves now, so a successful bite is not guaranteed; the tamed wolf must still go after wild game.
+        Check(events.Any(e => e.Kind == EventKinds.ActionStarted && e.Reason == (int)ActionKind.Hunt && e.Actor == wolf && (e.Target == rabbit || e.Target == deer)), "it still hunts wild game when hungry");
     }
 
     private static void SaveMidAction()
