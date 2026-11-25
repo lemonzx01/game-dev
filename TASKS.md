@@ -26,6 +26,11 @@ T001 and T002 are DONE. A007 revision 2 is Accepted. Any agent may take any uncl
 | T018 | Must | Playtest, bugfix, export build and docs | all completed Musts | Windows build if toolchain supports it, 15–30 minute observer trial, known bugs and verified commands | IN_PROGRESS (merged: Play.cmd, God tools, save/load, standalone Windows export build/windows/FantasyWorldSimulator.exe; remaining: owner 15–30 min playtest using docs/PLAYTEST.md; known issues in docs/KNOWN_ISSUES.md) |
 | T019 | Stretch | Simple combat, magic, dragon, tame | T009,T010,T014 | separate small tasks; costs and valid targets; one dragon species/tame trust if time | DONE (simulation; presentation follow-up after T018-env) |
 | T020 | Stretch | Possession movement/interact | T008,T014 | take/release control, same ID/state, AI resumes, other agents continue | DESIGN READY (docs/design/T020-possession.md); implement after FIX-R1 merges |
+| R1 | Should | Species bodies (per-species vitals) + sleep/wake cycle + healing | FIX-R2 | per-species hunger rates; night sleep at home, nocturnal wolves; sleepers wake on attacks; healing only fed+resting; no perf regression | TODO (docs/design/realism-roadmap.md) |
+| R2 | Should | Danger response: guards retreat when outmatched, alarm, group defence (K1) | FIX-R2 | lone guard vs dragon retreats and lives; 4+ guards engage together; alarm stops work then resumes | TODO |
+| R3 | Should | Houses (built from wood) and households; births need housing | R1 | wood cost + labour ticks; population <= housing; children near parents; save mid-construction | TODO |
+| R4 | Could | Weather, cold/heat exposure, shelter | R1,R3 | seeded weather; unsheltered cold damage; weather changes crop growth | TODO |
+| R5 | Could | Spoilage, supply/demand prices, migration, town abandonment | R3 | bounded prices; starving migrate; abandoned town milestone | TODO |
 
 ## How tasks are picked
 No task is tied to a particular AI. Any agent picks the next task whose dependencies are met and that nobody has claimed (AGENTS.md Workflow 1–2), on its own branch/worktree. Tasks whose acceptance says "independent review" (T014, contract/architecture changes) need a reviewer other than the author. If quotas are low, do T001–T009 first and reduce optional scope.

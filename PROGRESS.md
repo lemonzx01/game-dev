@@ -6,6 +6,10 @@ T001–T014 DONE and merged to main (2026-11-24; T003–T014 merged by owner ins
 
 ## Handoff log
 
+**2026-11-25 | Claude Code | Realism roadmap | main | docs**
+
+- Owner direction: simulation realism first, graphics later (only need to stay readable). docs/design/realism-roadmap.md defines R1–R6 with acceptance; TASKS.md rows R1–R5 added. All start after FIX-R2 merges (Antigravity holds Simulation/** now).
+
 **2026-11-25 | Google Antigravity | FIX-R2 review fixes for T019 (simulation) | main | merged (self-reviewed, A009)**
 
 - Fixed T019 simulation review findings `1–9, 14, 15-sim` from `docs/reviews/2026-11-codex-review-T019.md` on `fix/R2-review-T019` (`Simulation/**`, `Tests/**`, `docs/handoffs/FIX-R2.md` only; zero `Game/**`, `tools/**`, `Assets/**`, or `Data/**` edits; `ReadAdventure` signature unchanged; shared helpers `CanCastFirebolt`/`CastFirebolt`, `CanHeal`/`CastHeal`, `CanHunt`, `IsEligibleFeeder`/`CanFeedAnimal`/`Feed`, and `Attack`/`Hurt` extracted for T020 reuse):
