@@ -43,9 +43,9 @@ public partial class EffectsAcceptance : Node
             var map = bridge.Map;
             var (dx, dy) = Enumerable.Range(2, 4).SelectMany(r => new[] { (r, 0), (-r, 0), (0, r), (0, -r) })
                 .First(o => map.At(town.X + o.Item1, town.Y + o.Item2) is Terrain.Grass or Terrain.Forest);
-            bridge.SpawnAt(town.X + dx, town.Y + dy, SpeciesCatalog.Dragon);
             if (live)
             {
+                bridge.SpawnAt(town.X + dx, town.Y + dy, SpeciesCatalog.Dragon); // live preview only: the headless checks below spawn their own
                 // Watch it play out in real time. Preview only (this test scene, never the game): replay a Firebolt and a
                 // Heal every two seconds from the town centre toward the dragon's spawn tile so the spell effects can be seen.
                 var timer = new Timer { WaitTime = 2.0, Autostart = true };

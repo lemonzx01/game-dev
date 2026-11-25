@@ -6,6 +6,10 @@ T001–T014 DONE and merged to main (2026-11-24; T003–T014 merged by owner ins
 
 ## Handoff log
 
+**2026-11-25 | Claude Code | RB ecology balance | main | merged (partial acceptance)**
+
+- Measured with WorldReport (now per-species deaths + SUMMARY line + --species). Realism preset shared by game and tool; breeding seasons; rabbit/deer/sheep tuning. 10 seeds x 30 days: starvation avg 18.7% (was ~55%), max species share 43.8% (was up to 88%), all species alive; starvation <25% on 7/10 seeds. 60 days: wolves die out on 4/5 seeds -> task RP. Schema 19, 136/136 tests, all 6 Godot acceptances. docs/reports/RB-balance.md, docs/handoffs/RB.md.
+
 **2026-11-25 | Claude Code | FIX-R3 (Codex review of R1) | main | merged (self-reviewed, A009)**
 
 - 15 of 17 findings fixed with regressions (two mutation-checked), #4 partly (per-cell noise coalescing), #15 open (owner decision). Highs: rest/sleep rates now identical live vs loaded; fight noise independent of event-log capacity; bed-down rechecks eligibility at dawn. Schema 18. 134/134 tests, all 6 Godot acceptances, --body p99 1.68 ms. Handoff docs/handoffs/FIX-R3.md.

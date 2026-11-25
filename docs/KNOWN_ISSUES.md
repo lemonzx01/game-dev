@@ -13,7 +13,7 @@ Done: FIX-R1 (12/12), FIX-R2 (14 of 15; #13 open), FIX-R2-visuals, R1, R2, FIX-R
 ## Gameplay / simulation
 | ID | Sev | Issue | Notes |
 |---|---|---|---|
-| K10 | H | Ecology out of balance (WorldReport, seed 1, 30 days): rabbits 282 of 348 creatures, deer down to 2, starvation 58% of deaths, 0 trades. | `docs/reports/example-world-1-30d.md`. Needs a balance task (reproduction vs food regrowth vs predation) measured with WorldReport over several seeds. |
+| K10 | M | IMPROVED by RB: over 10 seeds x 30 days starvation avg 18.7% (was ~55%), no species above 44%, all species alive. Still: wolves die out by day 60 on 4/5 seeds (task RP), 0 trades (R5). Was: rabbits 282 of 348 creatures, deer down to 2, starvation 58% of deaths, 0 trades. | `docs/reports/example-world-1-30d.md`. Needs a balance task (reproduction vs food regrowth vs predation) measured with WorldReport over several seeds. |
 | K11 | L | FIXED by FIX-R3 except #4 (dense-crowd noise budget, partly) and #15 (animals sleep in place). Was: R1 review: 17 findings (3 High: sleep→rest healing differs live vs loaded; noise lost when the event log is full; arriving home at dawn sleeps a whole day). | `docs/reviews/2026-11-codex-review-R1.md`; fix as FIX-R3 after R2 merges (same files). |
 | K1 | — | FIXED by R2 (2026-11-25): guards retreat and raise the alarm when outmatched. Previously: guards never retreat. Against a dragon, each new guard volunteers and fights to the death one after another; a town can lose most adults. | Observed in the T019 visual run (Ashford 10 → 7 people in ~20 s). Needs a "too strong" check (compare power and health) and retreat or group defence. |
 | K2 | M | People who fear an animal (wolves, dragons) can never tame it: they flee before feeding. | T019 handoff. Needs a brave-tamer rule. |
@@ -23,7 +23,7 @@ Done: FIX-R1 (12/12), FIX-R2 (14 of 15; #13 open), FIX-R2-visuals, R1, R2, FIX-R
 | K6 | L | Temperature does not affect animals or water; seasons change in steps. | T012 open item. |
 | K7 | L | One generic book per town; there is no teaching, and no book topics. | T017 open item. |
 | K8 | L | Fixed prices; trade starts only when a town runs short. | T016 open item. |
-| K9 | L | Old saves are rejected after every schema bump (currently 18); there is no migration code. | T013 open item; fine before the first release. |
+| K9 | L | Old saves are rejected after every schema bump (currently 19); there is no migration code. | T013 open item; fine before the first release. |
 
 ## Presentation
 | ID | Sev | Issue | Notes |

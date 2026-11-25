@@ -54,6 +54,7 @@ public sealed partial class SimulationWorld
         if (!Breeds(sd) || e.Sex != Sex.Female || e.PregnantUntil != 0 || now < e.ReproReadyTick) return false;
         if (FearAt(e, now) > PsyCfg.FearBlocksMatingAbove) return false;
         if (StageOf(e, now) != LifeStage.Adult) return false;
+        if (OutOfBreedingSeason(e, now)) return false; // RB: wild animals breed in spring and summer only (Body on)
         var v = e.Vitals.At(now, options.Vitals);
         return v.Hunger <= eco.ReproMaxNeed && v.Thirst <= eco.ReproMaxNeed && v.Health >= eco.ReproMinHealth
                && entities.Count < eco.MaxEntities;

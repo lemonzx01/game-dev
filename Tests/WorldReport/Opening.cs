@@ -9,12 +9,13 @@ internal sealed class Opening(SimulationWorld simulation, MapView Map)
 
     public static SimulationWorld Create(Settings settings)
     {
-        var simulation = new SimulationWorld(new SimulationOptions
+        var options = new SimulationOptions
         {
             WorldId = World, Seed = settings.Seed, MapWidth = settings.Size, MapHeight = settings.Size,
-            Species = SpeciesCatalog.Default, Body = settings.Body ? BodyConfig.Realistic : BodyConfig.Default,
+            Species = settings.Species is { } file ? SpeciesCatalog.FromJson(File.ReadAllText(file)) : SpeciesCatalog.Default, Body = BodyConfig.Default,
             Grants = ImmutableSortedDictionary<long, AuthorityGrant>.Empty.Add(ScenarioAuthor, AuthorityGrant.God)
-        });
+        };
+        var simulation = new SimulationWorld(settings.Body ? Realism.Apply(options) : options); // same realism as the game
         var opening = new Opening(simulation, simulation.ReadMap());
         if (settings.Animals == 0) opening.SpawnOneNearCenter();
         else

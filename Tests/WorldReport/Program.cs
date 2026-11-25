@@ -24,7 +24,7 @@ try
                 page = world.ReadEvents(cursor, 256);
                 if (page.Status != PageStatus.Ok)
                     throw new InvalidOperationException($"Event cursor {cursor}: {page.Status} at day {day}, tick {t + 1}.");
-                foreach (var e in page.Records) row.Record(e);
+                foreach (var e in page.Records) row.Record(e, id => world.ReadEntityDetails(new WorldId(1), new EntityId(id))?.SpeciesKey ?? 0);
                 cursor = page.NextCursor;
             } while (cursor < page.LatestSequence);
             if (day == 1 && t == 0) report.Opening = Day.Population(world.ReadSnapshot());
@@ -38,6 +38,23 @@ try
     }
     report.Write();
     Console.WriteLine(Path.GetFullPath(settings.Output));
+    // RB: one machine-readable summary line per run (for multi-seed balance checks).
+    var last = report.Days[^1];
+    var speciesDeaths = report.Days.SelectMany(d => d.SpeciesDeaths).GroupBy(kv => kv.Key).ToDictionary(g => g.Key, g => g.Sum(kv => kv.Value));
+    var speciesBirths = report.Days.SelectMany(d => d.SpeciesBirths).GroupBy(kv => kv.Key).ToDictionary(g => g.Key, g => g.Sum(kv => kv.Value));
+    long deaths = speciesDeaths.Values.Sum(), starved = speciesDeaths.Where(kv => kv.Key.Cause == DeathCause.Starvation).Sum(kv => kv.Value);
+    int alive = last.Alive.Values.Sum();
+    Console.WriteLine("SUMMARY " + System.Text.Json.JsonSerializer.Serialize(new
+    {
+        seed = settings.Seed, days = settings.Days, body = settings.Body, alive,
+        species = last.Alive.ToDictionary(kv => SpeciesCatalog.Default.TryGetValue(kv.Key, out var d) ? d.Name : kv.Key.ToString(), kv => kv.Value),
+        births = speciesBirths.ToDictionary(kv => SpeciesCatalog.Default.TryGetValue(kv.Key, out var d) ? d.Name : kv.Key.ToString(), kv => kv.Value),
+        deaths = speciesDeaths.ToDictionary(kv => (SpeciesCatalog.Default.TryGetValue(kv.Key.Species, out var d) ? d.Name : kv.Key.Species.ToString()) + ":" + kv.Key.Cause, kv => kv.Value),
+        starvationPct = deaths == 0 ? 0 : 100.0 * starved / deaths,
+        maxSharePct = alive == 0 ? 0 : 100.0 * last.Alive.Values.Max() / alive,
+        trades = report.Days.Sum(d => d.Events.GetValueOrDefault(EventKinds.TradeSold)),
+        food = last.Towns.ToDictionary(t => t.Name, t => t.Food),
+    }));
 }
 catch (Exception ex) when (ex is ArgumentException or IOException or InvalidOperationException or UnauthorizedAccessException)
 {
@@ -46,14 +63,14 @@ catch (Exception ex) when (ex is ArgumentException or IOException or InvalidOper
 }
 return 0;
 
-internal sealed record Settings(int Days, ulong Seed, int Size, int Animals, int Settlers, bool Body, string Output)
+internal sealed record Settings(int Days, ulong Seed, int Size, int Animals, int Settlers, bool Body, string Output, string? Species = null)
 {
     public static Settings Parse(string[] args)
     {
         int days = 30, size = 128, animals = 120, settlers = 10;
         ulong seed = 1;
         bool body = true;
-        string? output = null;
+        string? output = null, species = null;
         for (int i = 0; i < args.Length; i++)
         {
             string key = args[i];
@@ -70,6 +87,7 @@ internal sealed record Settings(int Days, ulong Seed, int Size, int Animals, int
                 case "--settlers": settlers = Number(0, 511); break;
                 case "--seed" when ulong.TryParse(value, out seed): break;
                 case "--out": output = value; break;
+                case "--species": species = value; break; // RB: try a species table (JSON) without rebuilding
                 default: throw new ArgumentException($"Unknown option or invalid value: {key} {value}");
             }
         }
@@ -78,7 +96,7 @@ internal sealed record Settings(int Days, ulong Seed, int Size, int Animals, int
         output ??= $"docs/reports/world-{seed}-{days}d.md";
         if (!string.Equals(Path.GetExtension(output), ".md", StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException("--out must name a Markdown (.md) file.");
-        return new(days, seed, size, animals, settlers, body, output);
+        return new(days, seed, size, animals, settlers, body, output, species);
     }
 }
 
@@ -90,18 +108,20 @@ internal sealed class Day(int number)
     public Dictionary<ActionKind, long> Actions = [];
     public Dictionary<DeathCause, long> Deaths = [];
     public Dictionary<int, long> Events = [];
+    public Dictionary<(int Species, DeathCause Cause), long> SpeciesDeaths = [];
+    public Dictionary<int, long> SpeciesBirths = [];
     public long Births, Dropped, Rejected;
     public double Mean, P99;
 
     public static Dictionary<int, int> Population(WorldSnapshot snapshot) => snapshot.Chunks.SelectMany(chunk => chunk)
         .Where(e => e.LifeState == LifeStates.Alive).GroupBy(e => e.VisualKey).ToDictionary(g => g.Key, g => g.Count());
 
-    public void Record(WorldEvent e)
+    public void Record(WorldEvent e, Func<long, int> speciesOf)
     {
         switch (e.Kind)
         {
-            case EventKinds.EntityBorn: Births++; break;
-            case EventKinds.EntityDied: Add(Deaths, (DeathCause)e.Reason); break;
+            case EventKinds.EntityBorn: Births++; Add(SpeciesBirths, speciesOf(e.Target)); break;
+            case EventKinds.EntityDied: Add(Deaths, (DeathCause)e.Reason); Add(SpeciesDeaths, (speciesOf(e.Target), (DeathCause)e.Reason)); break;
             case EventKinds.ActionStarted: Add(Actions, (ActionKind)e.Reason); break;
             case EventKinds.EventsDropped: Dropped += e.Amount; break;
             case EventKinds.CommandRejected: Rejected++; break;

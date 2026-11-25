@@ -13,7 +13,7 @@ public enum SleepPattern { None = 0, Diurnal = 1, Nocturnal = 2 }
 public sealed record BodyConfig(bool Enabled = false, int DiurnalStart = 833, int DiurnalEnd = 208, int NocturnalStart = 375, int NocturnalEnd = 667,
     int SleepScore = 280, int FatigueRecoveryMultiplier = 2, int RestHealPercent = 250, int SleepHealPercent = 400,
     int AwareDistance = 2, int NoiseRadius = 6, bool GuardsKeepWatch = true,
-    long InjuredRestHealth = 500_000, long RecoveredHealth = 800_000, int InjuredRestScore = 220)
+    long InjuredRestHealth = 500_000, long RecoveredHealth = 800_000, int InjuredRestScore = 220, bool SeasonalBreeding = true)
 {
     public static BodyConfig Default { get; } = new();
 
@@ -51,6 +51,7 @@ public sealed record BodyConfig(bool Enabled = false, int DiurnalStart = 833, in
         w.Write(InjuredRestHealth);
         w.Write(RecoveredHealth);
         w.Write(InjuredRestScore);
+        w.Write(SeasonalBreeding);
     }
 
     /// <summary>FIX-R3 #13: with Body on, a positive base rate must not scale down to zero for any species or rest state.</summary>
@@ -70,6 +71,21 @@ public sealed record BodyConfig(bool Enabled = false, int DiurnalStart = 833, in
         Positive(v.RegenPerTick, RestHealPercent, "rest healing");
         Positive(v.RegenPerTick, SleepHealPercent, "sleep healing");
     }
+}
+
+/// <summary>
+/// The realistic world used by the game and by Tests/WorldReport (RB): Body on, carcasses that last two days (predators
+/// return to a kill instead of killing again), some winter forage (40% growth) and berry bushes regrowing every 240 ticks. Scenario tests keep the plain defaults.
+/// </summary>
+public static class Realism
+{
+    public static SimulationOptions Apply(SimulationOptions o) => o with
+    {
+        Body = BodyConfig.Realistic,
+        Ecology = o.Ecology with { CarcassDecayTicks = 4800 },
+        Climate = o.Climate with { WinterGrowthPercent = 40, MinGrowthTemperature = -3 }, // hardy winter forage grows on milder hours
+        Resources = o.Resources with { Food = o.Resources.Food with { RegrowIntervalTicks = 240 } },
+    };
 }
 
 /// <summary>
@@ -159,6 +175,11 @@ public sealed partial class SimulationWorld
         if (WantsToSleep(e, e.Vitals.At(now, options.Vitals), now)) BeginSleep(e, now);
         else FinishAction(e, now);
     }
+
+    /// <summary>RB: with Body on, wild (non-sapient) animals conceive only in spring and summer, so young are not born into winter.</summary>
+    private bool OutOfBreedingSeason(EntityState e, long now) =>
+        BodyCfg.Enabled && BodyCfg.SeasonalBreeding && !IsSapient(SpeciesOf(e))
+        && WorldTime.From(now, options.Calendar).Season is Season.Autumn or Season.Winter;
 
     /// <summary>FIX-R3 #11: ticks of rest (at the rest healing rate) until a wounded creature reaches RecoveredHealth; 0 if not injured.</summary>
     private long InjuredRestTicks(EntityState e, long now)

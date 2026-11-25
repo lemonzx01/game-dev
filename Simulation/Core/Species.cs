@@ -47,10 +47,10 @@ public static class SpeciesCatalog
     /// <summary>Life-cycle numbers are provisional balance values (GDD open decision: reproduction rates).</summary>
     public static ImmutableSortedDictionary<int, SpeciesDef> Default { get; } = Build(
     [
-        new SpeciesDef(Deer, "Deer", Diet.Herbivore, false, 2, 8, 0, 0, [Wolf, Dragon], [], 6 * Day, 60 * Day, (int)(3 * Day), (int)(6 * Day), 1, 6, 200_000, TameTrust: 60),
-        new SpeciesDef(Sheep, "Sheep", Diet.Herbivore, true, 2, 6, 0, 6, [Wolf, Dragon], [], 6 * Day, 60 * Day, (int)(3 * Day), (int)(6 * Day), 1, 8, 200_000),
-        new SpeciesDef(Rabbit, "Rabbit", Diet.Herbivore, false, 1, 2, 0, 0, [Wolf, Dragon], [], 2 * Day, 20 * Day, (int)(1 * Day), (int)(2 * Day), 2, 8, 100_000, TameTrust: 40,
-            HungerPercent: 150, ThirstPercent: 130), // small body: eats and drinks often
+        new SpeciesDef(Deer, "Deer", Diet.Herbivore, false, 1, 8, 0, 0, [Wolf, Dragon], [], 6 * Day, 60 * Day, (int)(3 * Day), (int)(6 * Day), 1, 6, 200_000, TameTrust: 60),
+        new SpeciesDef(Sheep, "Sheep", Diet.Herbivore, true, 2, 6, 0, 10, [Wolf, Dragon], [], 6 * Day, 60 * Day, (int)(3 * Day), (int)(6 * Day), 1, 8, 200_000),
+        new SpeciesDef(Rabbit, "Rabbit", Diet.Herbivore, false, 1, 2, 0, 0, [Wolf, Dragon], [], 4 * Day, 50 * Day, (int)(1.5 * Day), (int)(4 * Day), 1, 4, 100_000, TameTrust: 40,
+            HungerPercent: 120, ThirstPercent: 110), // RB: lives past one breeding season; small litters, locally capped
         new SpeciesDef(Wolf, "Wolf", Diet.Carnivore, false, 1, 5, 400_000, 0, [Dragon], [Deer, Sheep, Rabbit], 8 * Day, 70 * Day, (int)(3 * Day), (int)(10 * Day), 2, 3, 250_000, TameTrust: 100,
             HungerPercent: 70, ThirstPercent: 90, Sleep: SleepPattern.Nocturnal), // big meals, hunts at night
         // Sapient peoples (T015): identical numbers on purpose; neither is good or evil by rule.
