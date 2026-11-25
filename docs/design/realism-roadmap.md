@@ -29,6 +29,8 @@ Written by Claude Code. Each item is a task with acceptance tests, deterministic
   - Healing happens only while fed and resting.
   - Benchmark p99 at 1,000 entities shows no regression.
 
+**R1 decisions after review (FIX-R3):** awake creatures keep base healing; healing is faster resting (250%) and asleep (400%), and a badly wounded creature chooses to rest. Animals sleep where they stand (searching for cover or herd is deferred; owner may revisit).
+
 ## R2 — Danger responses (guards retreat, groups defend) (fixes K1)
 - **Why:** guards fight a dragon to the death one after another; the town loses its adults.
 - **What:**

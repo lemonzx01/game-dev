@@ -18,7 +18,7 @@ public sealed partial class SimulationWorld
 {
     private static readonly byte[] Magic = "FWSSAVE\0"u8.ToArray();
     public const uint SaveFormatVersion = 1;
-    public const uint StateSchema = 17;
+    public const uint StateSchema = 18;
     private static readonly JsonSerializerOptions OptionsJson = new() { WriteIndented = false };
 
     // ---- Save ----------------------------------------------------------------------------------
@@ -528,6 +528,7 @@ public sealed partial class SimulationWorld
         ReadSkillsFrom(r, e);
         ReadAdventureFrom(r, e);
         ApplyBodyRates(e); // R1: rates follow from species and the restored rest state
+        if (BodyStateError(e) is { } bodyError) Require(false, bodyError); // FIX-R3 #12
         Require(e.CarryAmount >= 0 && e.SettlementId >= 0, "Carried amount or settlement invalid.");
         return e;
     }

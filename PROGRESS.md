@@ -6,6 +6,10 @@ T001–T014 DONE and merged to main (2026-11-24; T003–T014 merged by owner ins
 
 ## Handoff log
 
+**2026-11-25 | Claude Code | FIX-R3 (Codex review of R1) | main | merged (self-reviewed, A009)**
+
+- 15 of 17 findings fixed with regressions (two mutation-checked), #4 partly (per-cell noise coalescing), #15 open (owner decision). Highs: rest/sleep rates now identical live vs loaded; fight noise independent of event-log capacity; bed-down rechecks eligibility at dawn. Schema 18. 134/134 tests, all 6 Godot acceptances, --body p99 1.68 ms. Handoff docs/handoffs/FIX-R3.md.
+
 **2026-11-25 | Antigravity + Claude Code | R2 danger response | main | merged**
 
 - Antigravity: integer threat assessment, guard retreat + town alarm (TownAlarm/GuardRetreated/TownAlarmEnded), Gather action, group defence, danger-memory avoidance; schema 17; 123/123 tests. Claude Code: integrated with main, rewrote EffectsAcceptance for the new behaviour, upright sleeping frames for animals. All 6 Godot acceptances pass; --body 1,000-entity p99 1.56 ms. Fixes K1.

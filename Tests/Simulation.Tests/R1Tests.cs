@@ -77,6 +77,7 @@ internal static class R1Tests
                 world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 5 + 8 * k, 10, kinds[k]));
             long cursor = 0;
             var spawned = Run(world, 1, ref cursor).Where(e => e.Kind == EventKinds.CommandApplied).ToList();
+            Check(spawned.Count == kinds.Length, $"every species spawned ({spawned.Count})"); // FIX-R3 #16
             Run(world, 60, ref cursor);
             long now = world.ReadSnapshot().Tick;
             foreach (var (spawn, kind) in spawned.Zip(kinds))
@@ -112,6 +113,7 @@ internal static class R1Tests
     private static void SleepCycle()
     {
         var (world, cursor, guard, others, wolves) = Town();
+        Check(wolves.Count == 2 && others.Count == 6, "both wolves and six villagers present"); // FIX-R3 #16
         RunTo(world, 300, ref cursor); // 03:00
         foreach (long id in others)
         {
@@ -158,9 +160,9 @@ internal static class R1Tests
         long asleepGain = world.ReadEntityDetails(W, new EntityId(sleeper))!.Health - 300_000;
         RunTo(world, Day / 2, ref cursor);
         Check(!world.IsAsleepForTest(waker) && world.ActionOf(waker) != ActionKind.Rest, "awake at noon");
-        world.SetHealthForTest(waker, 300_000);
+        world.SetHealthForTest(waker, 600_000); // above BodyConfig.InjuredRestHealth, so it keeps its normal day (FIX-R3 #11)
         Run(world, 100, ref cursor);
-        long awakeGain = world.ReadEntityDetails(W, new EntityId(waker))!.Health - 300_000;
+        long awakeGain = world.ReadEntityDetails(W, new EntityId(waker))!.Health - 600_000;
         long regen = NoNeeds.RegenPerTick * 100;
         Check(awakeGain == regen, $"awake: base healing ({awakeGain} vs {regen})");
         Check(asleepGain == regen * BodyConfig.Default.SleepHealPercent / 100, $"asleep: {BodyConfig.Default.SleepHealPercent}% healing ({asleepGain})");

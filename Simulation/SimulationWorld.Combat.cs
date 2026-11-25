@@ -167,10 +167,12 @@ public sealed partial class SimulationWorld
             bool fight = attacker.Mind.Kind == ActionKind.Defend || IsSapient(SpeciesOf(attacker));
             Die(prey, now, fight ? DeathCause.Combat : DeathCause.Predation, attacker.Id.Value);
             attacker.Mind.NoFoodUntil = 0; // the killer knows where fresh meat is
+            OnNoise(prey.X, prey.Y, now); // FIX-R3 #2: the fight is heard whether or not its event fits the log
             return;
         }
         prey.Vitals = new VitalsAnchor(now, v.Hunger, v.Thirst, health);
         ScheduleDeath(prey); // the old booking becomes stale
+        OnNoise(prey.X, prey.Y, now); // FIX-R3 #2 (also wakes the victim if it was asleep)
         perceptionVersion++;
         OnAttacked(prey, attacker, now);
         if (SpeciesOf(prey) is { Retaliates: true } && prey.Mind.Kind != ActionKind.Defend && CanHarm(prey, attacker))
