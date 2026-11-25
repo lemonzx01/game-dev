@@ -6,6 +6,10 @@ T001–T014 DONE and merged to main (2026-11-24; T003–T014 merged by owner ins
 
 ## Handoff log
 
+**2026-11-25 | Claude Code | R1 species bodies + sleep | main | merged (self-reviewed, A009)**
+
+- BodyConfig (off by default, on in the game): per-species hunger/thirst rates via the vitals anchor, sleep/wake windows (diurnal/nocturnal), townsfolk sleep at home, guards keep watch, fights wake sleepers, 400%/250% healing asleep/resting. Schema 16. 117/117 tests, all 6 Godot acceptances pass. Handoff docs/handoffs/R1.md.
+
 **2026-11-25 | Claude Code | Realism roadmap | main | docs**
 
 - Owner direction: simulation realism first, graphics later (only need to stay readable). docs/design/realism-roadmap.md defines R1–R6 with acceptance; TASKS.md rows R1–R5 added. All start after FIX-R2 merges (Antigravity holds Simulation/** now).

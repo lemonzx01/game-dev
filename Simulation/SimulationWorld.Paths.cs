@@ -88,7 +88,7 @@ public sealed partial class SimulationWorld
                     {
                         ActionKind.Eat => CanEatAt(e, cell),
                         ActionKind.Work => IsWorkGoal(e, cell),
-                        ActionKind.Read => SettlementOf(e) is { } home && cell == Cell(home.X, home.Y),
+                        ActionKind.Read or ActionKind.Sleep => SettlementOf(e) is { } home && cell == Cell(home.X, home.Y),
                         _ => CanConsumeAt(cell, ResourceKind.Water),
                     }, out expanded, canVisit);
             }
@@ -102,6 +102,7 @@ public sealed partial class SimulationWorld
                     FailTradeOutbound(e, now); // immediate ReturnHome with cargo; deal suppressed for cooldown
                 else if (request.Kind == ActionKind.Eat) e.Mind.NoFoodUntil = now + MindCfg.UnreachableCooldownTicks;
                 else if (request.Kind is ActionKind.Work or ActionKind.Read) e.Mind.NoWorkUntil = now + TownCfg.WorkCooldownTicks;
+                else if (request.Kind == ActionKind.Sleep) { BeginSleep(e, now); return; } // home unreachable: sleep where you are
                 else e.Mind.NoWaterUntil = now + MindCfg.UnreachableCooldownTicks;
                 Emit(new WorldEvent(0, now, EventKinds.PathFailed, 0, e.Id.Value, 0, e.X, e.Y, (int)request.Kind));
                 FinishAction(e, now);
@@ -116,7 +117,7 @@ public sealed partial class SimulationWorld
     /// <summary>Called when the next path cell became impassable (e.g. God SetTerrain).</summary>
     private void OnPathBlocked(EntityState e, long now)
     {
-        if (e.Mind.Kind is ActionKind.Eat or ActionKind.Drink or ActionKind.Work or ActionKind.Read && e.Mind.Replans < MindCfg.MaxReplans)
+        if (e.Mind.Kind is ActionKind.Eat or ActionKind.Drink or ActionKind.Work or ActionKind.Read or ActionKind.Sleep && e.Mind.Replans < MindCfg.MaxReplans)
         {
             e.Mind.Replans++;
             RequestPath(e, e.Mind.Kind);

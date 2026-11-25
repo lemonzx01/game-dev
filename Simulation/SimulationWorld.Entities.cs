@@ -31,7 +31,14 @@ internal sealed class EntityState
     public int Trust;                                        // trust toward TamerId
     public long TameAttemptUntil;                            // tick when an active untamed attempt claim expires (0 = none)
     public long BirthTick;
-    public VitalsAnchor Vitals;
+    public int HungerPct = 100, ThirstPct = 100, RegenPct = 100; // R1 body rates (species, rest/sleep), see ApplyBodyRates
+    private VitalsAnchor vitals;
+    /// <summary>Vitals anchor; every assignment carries this entity's current rate percentages.</summary>
+    public VitalsAnchor Vitals
+    {
+        get => vitals;
+        set => vitals = value with { HungerPct = HungerPct, ThirstPct = ThirstPct, RegenPct = RegenPct };
+    }
     public long ScheduledDeathTick = long.MaxValue; // only the item due at this tick is live; older items are stale
     public long DeathTick = -1;
     public DeathCause Cause;
@@ -65,6 +72,7 @@ public sealed partial class SimulationWorld
         };
         entity.ManaTick = now;
         if (IsSapient(sd)) entity.Mana = MaxMana(entity); // people start rested; mana then follows its anchor
+        ApplyBodyRates(entity); // R1: species hunger/thirst rates before the first death booking
         entities.Add(entity); // IDs are monotonic, so the list stays sorted by ID
         JoinSettlement(entity);
         grid.Add(id.Value, x, y);

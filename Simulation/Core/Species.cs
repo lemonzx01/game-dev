@@ -17,7 +17,8 @@ public sealed record SpeciesDef(int Key, string Name, Diet Diet, bool Domestic, 
     long AttackDamage, int LeashRadius, ImmutableArray<int> Fears, ImmutableArray<int> Hunts,
     long MaturityTicks = 0, long LifespanTicks = 0, int GestationTicks = 0, int ReproCooldownTicks = 0,
     int LitterSize = 0, int LocalDensityCap = 0, long BirthHungerCost = 0, Faction Faction = Faction.None,
-    int DamageTakenPercent = 100, bool Retaliates = false, int TameTrust = 0);
+    int DamageTakenPercent = 100, bool Retaliates = false, int TameTrust = 0,
+    int HungerPercent = 100, int ThirstPercent = 100, SleepPattern Sleep = SleepPattern.Diurnal);
 
 /// <summary>Carcass decay and hunting tuning (ticks). Defaults are provisional.</summary>
 public sealed record EcologyConfig(int CarcassDecayTicks, int AttackIntervalTicks, int HuntGiveUpTicks, int HuntCooldownTicks,
@@ -48,14 +49,16 @@ public static class SpeciesCatalog
     [
         new SpeciesDef(Deer, "Deer", Diet.Herbivore, false, 2, 8, 0, 0, [Wolf, Dragon], [], 6 * Day, 60 * Day, (int)(3 * Day), (int)(6 * Day), 1, 6, 200_000, TameTrust: 60),
         new SpeciesDef(Sheep, "Sheep", Diet.Herbivore, true, 2, 6, 0, 6, [Wolf, Dragon], [], 6 * Day, 60 * Day, (int)(3 * Day), (int)(6 * Day), 1, 8, 200_000),
-        new SpeciesDef(Rabbit, "Rabbit", Diet.Herbivore, false, 1, 2, 0, 0, [Wolf, Dragon], [], 2 * Day, 20 * Day, (int)(1 * Day), (int)(2 * Day), 2, 8, 100_000, TameTrust: 40),
-        new SpeciesDef(Wolf, "Wolf", Diet.Carnivore, false, 1, 5, 400_000, 0, [Dragon], [Deer, Sheep, Rabbit], 8 * Day, 70 * Day, (int)(3 * Day), (int)(10 * Day), 2, 3, 250_000, TameTrust: 100),
+        new SpeciesDef(Rabbit, "Rabbit", Diet.Herbivore, false, 1, 2, 0, 0, [Wolf, Dragon], [], 2 * Day, 20 * Day, (int)(1 * Day), (int)(2 * Day), 2, 8, 100_000, TameTrust: 40,
+            HungerPercent: 150, ThirstPercent: 130), // small body: eats and drinks often
+        new SpeciesDef(Wolf, "Wolf", Diet.Carnivore, false, 1, 5, 400_000, 0, [Dragon], [Deer, Sheep, Rabbit], 8 * Day, 70 * Day, (int)(3 * Day), (int)(10 * Day), 2, 3, 250_000, TameTrust: 100,
+            HungerPercent: 70, ThirstPercent: 90, Sleep: SleepPattern.Nocturnal), // big meals, hunts at night
         // Sapient peoples (T015): identical numbers on purpose; neither is good or evil by rule.
         new SpeciesDef(Human, "Human", Diet.Omnivore, false, 2, 10, 0, 0, [Wolf, Dragon], [], 16 * Day, 200 * Day, (int)(6 * Day), (int)(12 * Day), 1, 30, 250_000, Faction.Human),
         new SpeciesDef(Demon, "Demon", Diet.Omnivore, false, 2, 10, 0, 0, [Wolf, Dragon], [], 16 * Day, 200 * Day, (int)(6 * Day), (int)(12 * Day), 1, 30, 250_000, Faction.Demon),
         // A real dragon (T019): rare, long-lived, armoured, takes large game, fights back when hurt; does not breed yet.
         new SpeciesDef(Dragon, "Dragon", Diet.Carnivore, false, 1, 60, 700_000, 0, [], [Deer, Sheep, Wolf], 40 * Day, 2000 * Day,
-            DamageTakenPercent: 25, Retaliates: true, TameTrust: 300),
+            DamageTakenPercent: 25, Retaliates: true, TameTrust: 300, HungerPercent: 30, ThirstPercent: 40),
     ]);
 
     public static ImmutableSortedDictionary<int, SpeciesDef> Build(IEnumerable<SpeciesDef> defs)
@@ -93,6 +96,12 @@ public static class SpeciesCatalog
             ArgumentOutOfRangeException.ThrowIfLessThan(d.DamageTakenPercent, 1);
             ArgumentOutOfRangeException.ThrowIfGreaterThan(d.DamageTakenPercent, 1000);
             ArgumentOutOfRangeException.ThrowIfNegative(d.TameTrust);
+            foreach (int pct in new[] { d.HungerPercent, d.ThirstPercent })
+            {
+                ArgumentOutOfRangeException.ThrowIfLessThan(pct, 10);
+                ArgumentOutOfRangeException.ThrowIfGreaterThan(pct, 1000);
+            }
+            if (!Enum.IsDefined(d.Sleep)) throw new ArgumentException($"Species {key} sleep pattern invalid.");
             if (d.TameTrust > 0 && d.Faction != Faction.None) throw new ArgumentException($"People ({key}) cannot be tamed.");
             if (d.LifespanTicks > 0 && d.LifespanTicks <= d.MaturityTicks) throw new ArgumentException($"Species {key} must live past maturity.");
             if (d.LitterSize > 0 && (d.LifespanTicks == 0 || d.GestationTicks < 1 || d.LocalDensityCap < 1))
@@ -138,6 +147,9 @@ public static class SpeciesCatalog
             w.Write(d.DamageTakenPercent);
             w.Write(d.Retaliates);
             w.Write(d.TameTrust);
+            w.Write(d.HungerPercent);
+            w.Write(d.ThirstPercent);
+            w.Write((int)d.Sleep);
             foreach (var list in new[] { d.Fears, d.Hunts })
             {
                 var sorted = list.Sort();

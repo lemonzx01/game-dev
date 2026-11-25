@@ -84,6 +84,8 @@ public static class EventKinds
     public const int TameFed = 223;
     /// <summary>Durable milestone. Actor = feeder, Target = animal, Reason = settlement id, Amount = species.</summary>
     public const int AnimalTamed = 224;
+    /// <summary>R1: Actor = sleeper woken early, Reason = 1 woken by a nearby fight.</summary>
+    public const int WokeUp = 225;
     /// <summary>Actor = EntityId, Target = threat id (Flee), X/Y = position, Reason = <see cref="ActionKind"/>.</summary>
     public const int ActionStarted = 300;
     /// <summary>Actor = EntityId, Reason = <see cref="ActionKind"/> whose path search found nothing reachable.</summary>
