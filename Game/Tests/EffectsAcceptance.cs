@@ -76,7 +76,7 @@ public partial class EffectsAcceptance : Node
                     && row.LifeState == LifeStates.Alive)
                 {
                     var sprite = renderer.SpriteOf(row);
-                    Check(sprite is { } sp && sp.Sheet.ResourcePath.EndsWith("owner_sheet.png") && sp.Region.Position.Y == 13 * 112 && sp.Scale > 0.6f, "the dragon is drawn from its row of the owner sheet, at dragon size");
+                    Check(sprite is { } sp && sp.Sheet.ResourcePath.EndsWith("owner_sheet.png") && sp.Region.Position.Y == 13 * 104 && sp.Scale == 1f, "the dragon is drawn 1:1 from its row of the owner sheet");
                     if (lastX != int.MinValue && row.X != lastX)
                     {
                         Check(sprite!.Value.Mirrored == row.X < lastX, $"the dragon faces the way it stepped ({lastX} -> {row.X})");

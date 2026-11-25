@@ -17,7 +17,7 @@
   - turns magenta-tinted border pixels into outline ink, leaving purple or pink skin alone
   - cuts the sprites apart (the touching dragons are split at their thinnest column)
 - **Poses:** people have one front-facing pose, animals one side pose, the dragon three. The 13 animation columns are made from these by bobbing, leaning and lunging, plus a lying-down pose for death; the dragon cycles its three poses when walking. There is no real leg animation because none was drawn.
-- **Sizes:** one art pixel is drawn at 32/76 world px, so people are two cells tall. Rabbits are drawn at 0.65× and the dragon at 2× (about 4 cells).
+- **Sizes (rescaled 2026-11-25 at the owner's request, people were as big as the store):** the importer shrinks every frame to world pixels at real proportions: people 16–18 px (about one cell), deer 15, wolf 11, sheep 10, rabbit 7, dragon 64 (about four people). The 104 px frames are drawn 1:1 with nearest filtering, so pixels stay sharp.
 - **Variants and guards:** each human uses one of 4 looks (farmer, woman, elder, scholar), and guards use the guard sprite; the job is read from details at most every 20 ticks. Demons use one of 4 looks. Nearest filtering is used; at the start zoom an art pixel is about 1.26 screen px.
 - The old generated sheets (`characters_24.png`, `dragon_48.png`) stay as fallbacks but are not drawn.
 

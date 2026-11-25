@@ -197,12 +197,10 @@ public partial class MapRenderer : Node2D
 
     // ---- Character animation (presentation only: reads rows, never changes the simulation) ----
     // Sheet Assets/Art/characters_24.png (tools/art/make_characters.py): 24 px frames, columns below, rows per species/variant.
-    // Sheet frames are 112×112 art pixels, bottom-centred. People are ~76 art px tall and are drawn two cells tall, so one
-    // art pixel is ArtScale world pixels; RowScale makes rabbits smaller and the dragon twice a person's size.
-    [Export] public float ArtScale = 32f / 76f;
-    private const int Frame = 112, ColIdle = 0, ColWalk = 2, ColWork = 6, ColAttack = 8, ColRead = 10, ColDead = 12;
+    // Sheet frames are 104×104 world pixels, bottom-centred, already at real proportions (tools/art/import_owner_art.py):
+    // a person about one cell, the town store about two people, a dragon about four people tall. Drawn 1:1, nearest.
+    private const int Frame = 104, ColIdle = 0, ColWalk = 2, ColWork = 6, ColAttack = 8, ColRead = 10, ColDead = 12;
     private const int HumanRows = 4, GuardRow = 4, DemonRow0 = 5, DemonRows = 4, SheepRow = 9, DeerRow = 10, RabbitRow = 11, WolfRow = 12, DragonRow = 13;
-    private static float RowScale(int row) => row switch { RabbitRow => 0.65f, DragonRow => 2f, _ => 1f };
 
     // Guards wear the guard sprite. Job is not on the snapshot row, so it is read from details at most every 20 ticks per person.
     private readonly Dictionary<long, (long Tick, bool Guard)> guardCache = [];
@@ -332,6 +330,6 @@ public partial class MapRenderer : Node2D
         motion.TryGetValue(row.Id.Value, out var m);
         bool moving = !dead && m is not null && m.Pos.DistanceSquaredTo(m.Target) > 0.0004f;
         int col = SheetColumn(row, moving, sheetRow >= SheepRow);
-        return (characters, new Rect2(col * Frame, sheetRow * Frame, Frame, Frame), m is { Left: true }, ArtScale * RowScale(sheetRow));
+        return (characters, new Rect2(col * Frame, sheetRow * Frame, Frame, Frame), m is { Left: true }, 1f);
     }
 }

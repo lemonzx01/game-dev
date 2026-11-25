@@ -19,7 +19,13 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / 'Assets/Source/owner-art-2026-11-25'
 OUT = ROOT / 'Game/Assets/Art/owner_sheet.png'
-FRAME = 112
+FRAME = 112          # working frame in native art pixels (poses are built here)
+OUT_FRAME = 104      # output frame in world pixels (16 world px = one map cell)
+# World height of each kind, so sizes read as real proportions next to the 32 px town store (two cells):
+# a person about one cell, the store about twice a person, a dragon about four people tall.
+WORLD_SCALE = {  # world px per native art px, chosen from native heights (people ~77, deer 80, sheep 48, rabbit 42, wolf 61, dragon 71)
+    'person': 17 / 77, 'sheep': 10 / 48, 'deer': 15 / 80, 'rabbit': 7 / 42, 'wolf': 11 / 61, 'dragon': 64 / 71,
+}
 COLS = ['idle0', 'idle1', 'walk0', 'walk1', 'walk2', 'walk3', 'work0', 'work1', 'atk0', 'atk1', 'read0', 'read1', 'dead']
 
 
@@ -169,6 +175,18 @@ def dragon_frames(a, b, c):
             'dead': lying(a, True)}
 
 
+def to_world(frame, scale):
+    """Shrinks a native frame to world pixels (box filter), hard alpha edge, bottom-centred in an OUT_FRAME cell."""
+    size = max(1, round(FRAME * scale))
+    small = frame.resize((size, size), Image.BOX)
+    px = np.asarray(small).copy()
+    px[..., 3] = np.where(px[..., 3] >= 110, 255, 0)
+    small = Image.fromarray(px, 'RGBA')
+    cell = Image.new('RGBA', (OUT_FRAME, OUT_FRAME))
+    cell.alpha_composite(small, ((OUT_FRAME - size) // 2, OUT_FRAME - size))
+    return cell
+
+
 def main():
     humans = sprites('humans', 5)      # farmer, woman, elder, scholar, guard
     demons = sprites('demons', 4)      # villager, woman, elder, mage
@@ -182,13 +200,14 @@ def main():
             ('sheep', animal_frames(animals[0])), ('deer', animal_frames(animals[1])),
             ('rabbit', animal_frames(animals[2], hop=True)), ('wolf', animal_frames(animals[3])),
             ('dragon', dragon_frames(*dragons))]
-    sheet = Image.new('RGBA', (FRAME * len(COLS), FRAME * len(rows)))
-    for r, (_, frames) in enumerate(rows):
+    sheet = Image.new('RGBA', (OUT_FRAME * len(COLS), OUT_FRAME * len(rows)))
+    for r, (name, frames) in enumerate(rows):
+        kind = 'person' if name.startswith(('human', 'demon')) else name
         for c, col in enumerate(COLS):
-            sheet.alpha_composite(frames[col], (c * FRAME, r * FRAME))
+            sheet.alpha_composite(to_world(frames[col], WORLD_SCALE[kind]), (c * OUT_FRAME, r * OUT_FRAME))
     sheet.save(OUT)
     print('rows:', ', '.join(f'{i}={n}' for i, (n, _) in enumerate(rows)))
-    print('native heights (art px):', {n: f[ 'idle0'].getbbox()[3] - f['idle0'].getbbox()[1] for n, f in rows})
+    print('world heights (px):', {n: round((f['idle0'].getbbox()[3] - f['idle0'].getbbox()[1]) * WORLD_SCALE['person' if n.startswith(('human', 'demon')) else n]) for n, f in rows})
     if len(sys.argv) > 1:
         bg = Image.new('RGBA', sheet.size, (150, 173, 99, 255))
         bg.alpha_composite(sheet)
