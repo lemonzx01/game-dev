@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Agent / branch / state | Codex / feat/world-report / REVIEW |
+| Agent / branch / state | Codex / feat/world-report / DONE: merged by Claude Code 2026-11-25 (one stray `}` at the end of Opening.cs broke the committed build; fixed on main) |
 | Base | Local origin/main at 417c011 |
 | Files | Tests/WorldReport/{WorldReport.csproj,Opening.cs,Program.cs,Report.cs}, docs/WORLD_REPORT.md, docs/reports/example-world-1-30d.md, this handoff |
 | Changes | Console host mirroring the game opening, daily snapshot census and town inventories, cursor-based event counts, daily Step timing and Markdown/CSV output. All simulation access uses public APIs. |

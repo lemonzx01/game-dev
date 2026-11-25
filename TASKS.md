@@ -31,6 +31,8 @@ T001 and T002 are DONE. A007 revision 2 is Accepted. Any agent may take any uncl
 | R3 | Should | Houses (built from wood) and households; births need housing | R1 | wood cost + labour ticks; population <= housing; children near parents; save mid-construction | TODO |
 | R4 | Could | Weather, cold/heat exposure, shelter | R1,R3 | seeded weather; unsheltered cold damage; weather changes crop growth | TODO |
 | R5 | Could | Spoilage, supply/demand prices, migration, town abandonment | R3 | bounded prices; starving migrate; abandoned town milestone | TODO |
+| FIX-R3 | Must | Fix Codex R1 review findings (17) | R2 merged | each finding fixed with a failing-then-passing regression, or recorded Open with reason | TODO (docs/reviews/2026-11-codex-review-R1.md) |
+| RB | Should | Ecology balance measured with WorldReport (rabbit boom, deer collapse, starvation share, no trade) | FIX-R3 | over 5 seeds x 30 days: no species > 50% of creatures, starvation < 25% of deaths, every opening species survives; numbers in a report | TODO |
 
 ## How tasks are picked
 No task is tied to a particular AI. Any agent picks the next task whose dependencies are met and that nobody has claimed (AGENTS.md Workflow 1–2), on its own branch/worktree. Tasks whose acceptance says "independent review" (T014, contract/architecture changes) need a reviewer other than the author. If quotas are low, do T001–T009 first and reduce optional scope.

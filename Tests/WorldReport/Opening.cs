@@ -88,6 +88,4 @@ internal sealed class Opening(SimulationWorld simulation, MapView Map)
             placed++;
         }
     }
-
-    }
 }

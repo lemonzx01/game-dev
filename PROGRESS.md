@@ -6,6 +6,10 @@ T001–T014 DONE and merged to main (2026-11-24; T003–T014 merged by owner ins
 
 ## Handoff log
 
+**2026-11-25 | Claude Code | Integrated Codex R1 review + WorldReport | main | merged**
+
+- Codex's R1 review (17 findings) merged; fixes queued as FIX-R3 after R2. WorldReport tool merged (Tests/WorldReport; fixed a stray brace that broke its build on the committed branch). Its 30-day example shows an ecology imbalance (K10) -> task RB.
+
 **2026-11-25 | Claude Code | R1 species bodies + sleep | main | merged (self-reviewed, A009)**
 
 - BodyConfig (off by default, on in the game): per-species hunger/thirst rates via the vitals anchor, sleep/wake windows (diurnal/nocturnal), townsfolk sleep at home, guards keep watch, fights wake sleepers, 400%/250% healing asleep/resting. Schema 16. 117/117 tests, all 6 Godot acceptances pass. Handoff docs/handoffs/R1.md.
