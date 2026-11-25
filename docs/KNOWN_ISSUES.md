@@ -6,8 +6,11 @@ link the fix branch. Severity: **H** = wrong outcome or blocks play, **M** = not
 ## Being fixed now
 | ID | Sev | Issue | Owner / where |
 |---|---|---|---|
-| R1–R12 | H/M/L | 12 findings from the Codex review of T015–T017. The worst two are an unreachable buyer locking the trader slot, and long trade routes bypassing the path budget. | Antigravity, FIX-R1 (`docs/reviews/2026-11-codex-review-T015-T017.md`) |
-| — | — | Independent review of T019 (simulation + visuals) not done yet | ChatGPT/Codex, prompt 3 (`docs/prompts/chatgpt-round2.md`) |
+| R2 | M | Guards retreat / alarm / group defence (fixes K1). | Antigravity, `feat/R2-danger` (awaiting commit; `EffectsAcceptance` update by Claude Code) |
+| FIX-R3 | H/M/L | 17 findings of the Codex R1 review (K11). | Claude Code, after R2 merges |
+| T019 #13 | M | Durable milestone archive cap (ARCHITECTURE §9) still open; design proposal in `docs/handoffs/FIX-R2.md`. | unassigned |
+
+Done: FIX-R1 (12/12), FIX-R2 (14 of 15; #13 open), FIX-R2-visuals.
 
 ## Gameplay / simulation
 | ID | Sev | Issue | Notes |
@@ -18,11 +21,11 @@ link the fix branch. Severity: **H** = wrong outcome or blocks play, **M** = not
 | K2 | M | People who fear an animal (wolves, dragons) can never tame it: they flee before feeding. | T019 handoff. Needs a brave-tamer rule. |
 | K3 | L | Early games have almost no mages: magic needs one finished book (300 pages of idle reading). | By design for now; tune after playtest. |
 | K4 | L | No weapons or armour items; guards' damage stands in for being armed. Dragons have no flight or breath attack. | GDD equipment and dragon abilities are future work. |
-| K5 | L | Vitals rates are global, not per species; population balance is untuned. | T009/T011 open items. |
+| K5 | L | Population balance is untuned (per-species vitals rates exist since R1). | See K10 / task RB. |
 | K6 | L | Temperature does not affect animals or water; seasons change in steps. | T012 open item. |
 | K7 | L | One generic book per town; there is no teaching, and no book topics. | T017 open item. |
 | K8 | L | Fixed prices; trade starts only when a town runs short. | T016 open item. |
-| K9 | L | Old saves are rejected after every schema bump (currently 13); there is no migration code. | T013 open item; fine before the first release. |
+| K9 | L | Old saves are rejected after every schema bump (currently 16); there is no migration code. | T013 open item; fine before the first release. |
 
 ## Presentation
 | ID | Sev | Issue | Notes |
