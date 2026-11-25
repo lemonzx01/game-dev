@@ -84,12 +84,16 @@ public partial class SimulationBridge : Node
     // Mixed herd spread over land in a fixed pattern (deterministic for a given seed); arrives on tick 1.
     // T015 opening: a human town in the west and a demon town in the east, each with ten settlers, founded through
     // ordinary God commands in the same tick (founding runs first, so the settlers join on arrival).
+    private readonly System.Collections.Generic.List<(int X, int Y)> townSites = [];
+    private int sheepPlaced;
+
     private void FoundStarterTowns(int settlersEach)
     {
         var sites = new[] { (Faction.Human, "Ashford", Map.Width / 4), (Faction.Demon, "Cinderhold", Map.Width * 3 / 4) };
         foreach (var (faction, name, column) in sites)
         {
             if (FindTownSite(column) is not { } site) continue;
+            townSites.Add(site);
             simulation.SubmitCommand(new FoundSettlementCommand(World, ScenarioAuthor, CommandModes.God, site.X, site.Y, faction, name));
             int species = faction == Faction.Human ? SpeciesCatalog.Human : SpeciesCatalog.Demon;
             for (int k = 0; k < settlersEach; k++)
@@ -121,16 +125,47 @@ public partial class SimulationBridge : Node
 
     private void SpawnStarterPopulation(int count)
     {
-        int[] mix = [SpeciesCatalog.Deer, SpeciesCatalog.Rabbit, SpeciesCatalog.Sheep, SpeciesCatalog.Rabbit, SpeciesCatalog.Deer, SpeciesCatalog.Rabbit, SpeciesCatalog.Sheep, SpeciesCatalog.Wolf];
+        // RP: keep in sync with WorldReport Opening.SpawnStarterPopulation. Herbivores spread one per slot (deer, rabbit, sheep,
+        // rabbit); wolves come as a female + male pair once every 32 slots (about one wolf per 16 animals, in mated pairs).
+        int[] herd = [SpeciesCatalog.Deer, SpeciesCatalog.Rabbit, SpeciesCatalog.Sheep, SpeciesCatalog.Rabbit];
+        const int WolfPairEvery = 32; // RP: one wolf pair per this many slots
+        int Mix(int slot) => slot % WolfPairEvery == WolfPairEvery - 1 ? SpeciesCatalog.Wolf : herd[slot % herd.Length];
         int placed = 0;
         int step = System.Math.Max(1, Map.Cells.Length / (count * 2)) | 1; // odd stride spreads the herd over the whole map
         for (int cell = 0; cell < Map.Cells.Length && placed < count; cell += step)
         {
             if (Map.Cells[cell] is not (Terrain.Grass or Terrain.Forest)) continue;
-            var receipt = simulation.SubmitCommand(new SpawnEntityCommand(World, ScenarioAuthor, CommandModes.God, cell % Map.Width, cell / Map.Width, mix[placed % mix.Length]));
+            int species = Mix(placed);
+            var (sx, sy) = species == SpeciesCatalog.Sheep && FarmCell() is { } farm ? farm : (cell % Map.Width, cell / Map.Width); // RP: livestock lives at the towns
+            var receipt = simulation.SubmitCommand(new SpawnEntityCommand(World, ScenarioAuthor, CommandModes.God, sx, sy, species,
+                species == SpeciesCatalog.Wolf ? Sex.Female : Sex.Unspecified));
             if (receipt.Status != "Queued") break; // command queue full: stop rather than drop silently
             placed++;
+            if (species == SpeciesCatalog.Wolf && placed < count)
+            {
+                receipt = simulation.SubmitCommand(new SpawnEntityCommand(World, ScenarioAuthor, CommandModes.God, cell % Map.Width, cell / Map.Width, species, Sex.Male));
+                if (receipt.Status != "Queued") break;
+                placed++;
+            }
         }
+    }
+
+    // RP: sheep graze around the towns (ring 4–7 tiles from the centre, alternating towns), never on water or mountains.
+    private (int X, int Y)? FarmCell()
+    {
+        if (townSites.Count == 0) return null;
+        for (int attempt = 0; attempt < 64; attempt++)
+        {
+            int k = sheepPlaced + attempt;
+            var (tx, ty) = townSites[k % townSites.Count];
+            int ring = 4 + (k / townSites.Count) % 4, side = (k / (townSites.Count * 4)) % 8;
+            var (dx, dy) = side switch { 0 => (ring, 0), 1 => (-ring, 0), 2 => (0, ring), 3 => (0, -ring), 4 => (ring, ring), 5 => (-ring, ring), 6 => (ring, -ring), _ => (-ring, -ring) };
+            int x = tx + dx, y = ty + dy;
+            if (x < 0 || y < 0 || x >= Map.Width || y >= Map.Height || Map.At(x, y) is Terrain.Water or Terrain.Mountain) continue;
+            sheepPlaced = k + 1;
+            return (x, y);
+        }
+        return null;
     }
 
     public override void _Process(double delta)

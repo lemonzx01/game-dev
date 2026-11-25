@@ -6,6 +6,10 @@ T001–T014 DONE and merged to main (2026-11-24; T003–T014 merged by owner ins
 
 ## Handoff log
 
+**2026-11-25 | Claude Code | RP predator viability | main | merged (partial acceptance)**
+
+- Diagnosed with WorldReport --trace-wolves: wolves died resting inside town grounds (guards), of thirst (water search only 8 tiles) and in boom-bust. Fixes (Body on): roaming when hungry predator or failed water/food search; wild predators keep out of town grounds (no hunting, roaming, resting there); one wolf pair per 32 animals, sheep at the towns; rabbit/wolf tuning; winter growth 60%. 60 days x 5 seeds: wolves alive 5/5, max share 41.8%, starvation <25% on 4/5 (seed 2: 29.3%). Schema 20, 141/141 tests, all 6 Godot acceptances. docs/reports/RP-predators.md, docs/handoffs/RP.md.
+
 **2026-11-25 | Claude Code | RB ecology balance | main | merged (partial acceptance)**
 
 - Measured with WorldReport (now per-species deaths + SUMMARY line + --species). Realism preset shared by game and tool; breeding seasons; rabbit/deer/sheep tuning. 10 seeds x 30 days: starvation avg 18.7% (was ~55%), max species share 43.8% (was up to 88%), all species alive; starvation <25% on 7/10 seeds. 60 days: wolves die out on 4/5 seeds -> task RP. Schema 19, 136/136 tests, all 6 Godot acceptances. docs/reports/RB-balance.md, docs/handoffs/RB.md.

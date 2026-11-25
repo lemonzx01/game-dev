@@ -49,10 +49,10 @@ public static class SpeciesCatalog
     [
         new SpeciesDef(Deer, "Deer", Diet.Herbivore, false, 1, 8, 0, 0, [Wolf, Dragon], [], 6 * Day, 60 * Day, (int)(3 * Day), (int)(6 * Day), 1, 6, 200_000, TameTrust: 60),
         new SpeciesDef(Sheep, "Sheep", Diet.Herbivore, true, 2, 6, 0, 10, [Wolf, Dragon], [], 6 * Day, 60 * Day, (int)(3 * Day), (int)(6 * Day), 1, 8, 200_000),
-        new SpeciesDef(Rabbit, "Rabbit", Diet.Herbivore, false, 1, 2, 0, 0, [Wolf, Dragon], [], 4 * Day, 50 * Day, (int)(1.5 * Day), (int)(4 * Day), 1, 4, 100_000, TameTrust: 40,
-            HungerPercent: 120, ThirstPercent: 110), // RB: lives past one breeding season; small litters, locally capped
-        new SpeciesDef(Wolf, "Wolf", Diet.Carnivore, false, 1, 5, 400_000, 0, [Dragon], [Deer, Sheep, Rabbit], 8 * Day, 70 * Day, (int)(3 * Day), (int)(10 * Day), 2, 3, 250_000, TameTrust: 100,
-            HungerPercent: 70, ThirstPercent: 90, Sleep: SleepPattern.Nocturnal), // big meals, hunts at night
+        new SpeciesDef(Rabbit, "Rabbit", Diet.Herbivore, false, 1, 2, 0, 0, [Wolf, Dragon], [], 4 * Day, 50 * Day, (int)(1.5 * Day), (int)(7 * Day), 1, 3, 100_000, TameTrust: 40,
+            HungerPercent: 120, ThirstPercent: 110), // RB/RP: lives past one breeding season; small, spaced litters, locally capped
+        new SpeciesDef(Wolf, "Wolf", Diet.Carnivore, false, 1, 5, 400_000, 0, [Dragon], [Deer, Sheep, Rabbit], 8 * Day, 70 * Day, (int)(3 * Day), (int)(10 * Day), 2, 2, 250_000, TameTrust: 100,
+            HungerPercent: 50, ThirstPercent: 90, Sleep: SleepPattern.Nocturnal), // RP: big meals that last, hunts at night, sparse packs
         // Sapient peoples (T015): identical numbers on purpose; neither is good or evil by rule.
         new SpeciesDef(Human, "Human", Diet.Omnivore, false, 2, 10, 0, 0, [Wolf, Dragon], [], 16 * Day, 200 * Day, (int)(6 * Day), (int)(12 * Day), 1, 30, 250_000, Faction.Human),
         new SpeciesDef(Demon, "Demon", Diet.Omnivore, false, 2, 10, 0, 0, [Wolf, Dragon], [], 16 * Day, 200 * Day, (int)(6 * Day), (int)(12 * Day), 1, 30, 250_000, Faction.Demon),

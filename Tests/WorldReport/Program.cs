@@ -9,9 +9,11 @@ try
     var world = Opening.Create(settings);
     var report = new Report(settings);
     long cursor = 0;
+    var trace = settings.TraceWolves ? new WolfTrace() : null; // RP: daily wolf hunting diagnostics
     for (int day = 1; day <= settings.Days; day++)
     {
         var row = new Day(day);
+        trace?.BeginDay();
         var elapsed = new long[CalendarConfig.Default.TicksPerDay];
         for (int t = 0; t < elapsed.Length; t++)
         {
@@ -24,12 +26,17 @@ try
                 page = world.ReadEvents(cursor, 256);
                 if (page.Status != PageStatus.Ok)
                     throw new InvalidOperationException($"Event cursor {cursor}: {page.Status} at day {day}, tick {t + 1}.");
-                foreach (var e in page.Records) row.Record(e, id => world.ReadEntityDetails(new WorldId(1), new EntityId(id))?.SpeciesKey ?? 0);
+                foreach (var e in page.Records)
+                {
+                    row.Record(e, id => world.ReadEntityDetails(new WorldId(1), new EntityId(id))?.SpeciesKey ?? 0);
+                    trace?.Record(e, id => world.ReadEntityDetails(new WorldId(1), new EntityId(id))?.SpeciesKey ?? 0);
+                }
                 cursor = page.NextCursor;
             } while (cursor < page.LatestSequence);
             if (day == 1 && t == 0) report.Opening = Day.Population(world.ReadSnapshot());
         }
         row.Alive = Day.Population(world.ReadSnapshot());
+        trace?.EndDay(day, world);
         row.Towns = world.ReadSettlements().ToArray();
         Array.Sort(elapsed);
         row.Mean = elapsed.Average() * 1000 / Stopwatch.Frequency;
@@ -63,18 +70,19 @@ catch (Exception ex) when (ex is ArgumentException or IOException or InvalidOper
 }
 return 0;
 
-internal sealed record Settings(int Days, ulong Seed, int Size, int Animals, int Settlers, bool Body, string Output, string? Species = null)
+internal sealed record Settings(int Days, ulong Seed, int Size, int Animals, int Settlers, bool Body, string Output, string? Species = null, bool TraceWolves = false)
 {
     public static Settings Parse(string[] args)
     {
         int days = 30, size = 128, animals = 120, settlers = 10;
         ulong seed = 1;
-        bool body = true;
+        bool body = true, traceWolves = false;
         string? output = null, species = null;
         for (int i = 0; i < args.Length; i++)
         {
             string key = args[i];
             if (key == "--no-body") { body = false; continue; }
+            if (key == "--trace-wolves") { traceWolves = true; continue; }
             if (++i == args.Length) throw new ArgumentException($"Missing value for {key}.");
             string value = args[i];
             int Number(int min, int max) => int.TryParse(value, out var n) && n >= min && n <= max
@@ -96,7 +104,7 @@ internal sealed record Settings(int Days, ulong Seed, int Size, int Animals, int
         output ??= $"docs/reports/world-{seed}-{days}d.md";
         if (!string.Equals(Path.GetExtension(output), ".md", StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException("--out must name a Markdown (.md) file.");
-        return new(days, seed, size, animals, settlers, body, output, species);
+        return new(days, seed, size, animals, settlers, body, output, species, traceWolves);
     }
 }
 
@@ -132,4 +140,49 @@ internal sealed class Day(int number)
 
     private static void Add<T>(Dictionary<T, long> counts, T key) where T : notnull =>
         counts[key] = counts.GetValueOrDefault(key) + 1;
+}
+
+/// <summary>RP: per-day wolf hunting diagnostics (printed as WOLF lines).</summary>
+internal sealed class WolfTrace
+{
+    private long hunts, kills, meals, mealUnits, huntsVsPeople;
+    private readonly Dictionary<DeathCause, long> deaths = [];
+    private readonly Dictionary<int, long> preyKilled = [];
+    private readonly Dictionary<int, long> killers = [];
+    public static readonly List<(int X, int Y)> KillSites = [];
+    private readonly Dictionary<long, ActionKind> lastAction = [];
+    public static readonly Dictionary<ActionKind, int> LastBeforeDeath = [];
+
+    public void BeginDay() { hunts = kills = meals = mealUnits = huntsVsPeople = 0; deaths.Clear(); preyKilled.Clear(); killers.Clear(); }
+
+    public void Record(WorldEvent e, Func<long, int> speciesOf)
+    {
+        switch (e.Kind)
+        {
+            case EventKinds.ActionStarted when speciesOf(e.Actor) == SpeciesCatalog.Wolf:
+                lastAction[e.Actor] = (ActionKind)e.Reason;
+                if (e.Reason == (int)ActionKind.Hunt) hunts++;
+                break;
+            case EventKinds.EntityAte when speciesOf(e.Actor) == SpeciesCatalog.Wolf: meals++; mealUnits += e.Amount; break;
+            case EventKinds.EntityDied when e.Actor != 0 && speciesOf(e.Actor) == SpeciesCatalog.Wolf:
+                kills++; int sp = speciesOf(e.Target); preyKilled[sp] = preyKilled.GetValueOrDefault(sp) + 1; break;
+        }
+        if (e.Kind == EventKinds.EntityDied && speciesOf(e.Target) == SpeciesCatalog.Wolf)
+        {
+            deaths[(DeathCause)e.Reason] = deaths.GetValueOrDefault((DeathCause)e.Reason) + 1;
+            if (e.Reason == (int)DeathCause.Combat) killers[speciesOf(e.Actor)] = killers.GetValueOrDefault(speciesOf(e.Actor)) + 1;
+            if (e.Reason == (int)DeathCause.Combat) WolfTrace.KillSites.Add((e.X, e.Y));
+            if (e.Reason == (int)DeathCause.Combat) { var k = lastAction.GetValueOrDefault(e.Target); LastBeforeDeath[k] = LastBeforeDeath.GetValueOrDefault(k) + 1; }
+        }
+    }
+
+    public void EndDay(int day, SimulationWorld world)
+    {
+        var wolves = world.ReadSnapshot().Chunks.SelectMany(c => c).Where(r => r.VisualKey == SpeciesCatalog.Wolf && r.LifeState == LifeStates.Alive).ToList();
+        var hunger = wolves.Select(r => world.ReadEntityDetails(new WorldId(1), r.Id)!.Hunger).ToList();
+        int asleep = wolves.Count(r => r.Action == (int)ActionKind.Sleep);
+        Console.WriteLine($"WOLF day={day} alive={wolves.Count} hungerAvg={(hunger.Count == 0 ? 0 : hunger.Average() / 1000):F0}k hungry={hunger.Count(h => h >= 300_000)} " +
+                          $"hunts={hunts} kills={kills} prey=[{string.Join(",", preyKilled.Select(kv => $"{kv.Key}:{kv.Value}"))}] meals={meals} units={mealUnits} " +
+                          $"asleepAtMidnight={asleep} deaths=[{string.Join(",", deaths.Select(kv => $"{kv.Key}:{kv.Value}"))}] killers=[{string.Join(",", killers.Select(kv => $"{kv.Key}:{kv.Value}"))}] towns=[{string.Join(";", world.ReadSettlements().Select(t => $"{t.X},{t.Y}"))}] combatSites=[{string.Join(";", KillSites.TakeLast(3).Select(k => $"{k.X},{k.Y}"))}] lastAct=[{string.Join(",", LastBeforeDeath.Select(kv => $"{kv.Key}:{kv.Value}"))}]");
+    }
 }

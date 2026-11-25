@@ -30,7 +30,8 @@ using System.Reflection.PortableExecutable;
     .. R1Tests.Cases,
     .. R2Tests.Cases,
     .. FixR3Tests.Cases,
-    .. RBTests.Cases
+    .. RBTests.Cases,
+    .. RPTests.Cases
 ];
 int failures = 0;
 foreach (var test in cases)
@@ -120,7 +121,7 @@ static void Replay()
     var baseline = RunHost("42", false);
     Check(baseline.Length == 100 && baseline.SequenceEqual(RunHost("42", true)), "per-tick replay mismatch");
     Check(!baseline.SequenceEqual(RunHost("43", false)), "seed had no effect");
-    Check(baseline[0] == "1 EB714839FAD40A83DA14F88A93363F35908BF2631F36D180FE39446E5A075318", "schema 19 canonical byte order");
+    Check(baseline[0] == "1 B85A0F8CA7252AA483C4E9A81B43E64D0E486E4FF45C939238A442212D1C4A9D", "schema 20 canonical byte order");
 }
 
 static void Events()
