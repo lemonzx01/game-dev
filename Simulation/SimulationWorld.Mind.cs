@@ -421,7 +421,9 @@ public sealed partial class SimulationWorld
         }
 
         var current = e.Mind.Kind;
-        if (threat is null && current is not (ActionKind.Idle or ActionKind.Wander) && now < e.Mind.CommitUntil)
+        var town = SettlementOf(e);
+        bool inTownAlarm = IsTownAlarmActiveForMember(e, town, now);
+        if (threat is null && !inTownAlarm && current is not (ActionKind.Idle or ActionKind.Wander) && now < e.Mind.CommitUntil)
         {
             ClearScanState(ref e.Mind);
             if (resuming) ScheduleThink(e, now + cfg.ThinkIntervalTicks);
@@ -483,17 +485,22 @@ public sealed partial class SimulationWorld
         }
 
         if (resuming)
-            ScheduleThink(e, now + (threat is null ? cfg.ThinkIntervalTicks : cfg.DangerThinkIntervalTicks));
+            ScheduleThink(e, now + (threat is null && !inTownAlarm ? cfg.ThinkIntervalTicks : cfg.DangerThinkIntervalTicks));
 
-        EntityState? defendTarget = townThreat ?? (FightsBack(e, threat, distance, now) ? threat : null);
         long fatigue = FatigueAt(e.Mind, now);
-        Span<(int Score, ActionKind Kind)> candidates = stackalloc (int, ActionKind)[14];
+        Span<(int Score, ActionKind Kind)> candidates = stackalloc (int, ActionKind)[15];
         int n = 0;
-        // Guards fight threats inside the town (T016); cornered or brave villagers with friends fight back (T019).
+        // Guards fight threats inside the town (T016); when outmatched they raise the alarm and retreat (R2).
+        ResolveCombatOrAlarmCandidates(e, town, threat, distance, townThreat, now,
+            out var defendTarget, out bool guardRetreat, out bool gatherAtCentre, out inTownAlarm);
+        if (inTownAlarm && threat is null && !resuming)
+            ScheduleThink(e, now + cfg.DangerThinkIntervalTicks);
         if (defendTarget is not null)
             candidates[n++] = (TradeCfg.DefendScore, ActionKind.Defend);
-        if (threat is not null)
-            candidates[n++] = (FleeScore(e, distance, now), ActionKind.Flee); // personality and fear decide how close is too close
+        if (threat is not null && (!guardRetreat || PreferFleeOverGather(e, town, threat, distance, guardRetreat: true)))
+            candidates[n++] = (FleeScore(e, distance, now) + (inTownAlarm && distance <= DangerCfg.VillagerFleeDistance ? DangerCfg.GatherScore : 0), ActionKind.Flee); // personality and fear decide how close is too close
+        if (gatherAtCentre)
+            candidates[n++] = (guardRetreat ? DangerCfg.GuardRetreatScore : DangerCfg.GatherScore, ActionKind.Gather);
         if (v.Thirst >= cfg.DrinkStartNeed || current == ActionKind.Drink)
             candidates[n++] = ((int)(v.Thirst * 12 / 10_000), ActionKind.Drink);
         if (v.Hunger >= cfg.EatStartNeed || current == ActionKind.Eat)
@@ -502,21 +509,21 @@ public sealed partial class SimulationWorld
         if ((SpeciesOf(e)?.Hunts.Length ?? 0) > 0 && (v.Hunger >= cfg.EatStartNeed || current == ActionKind.Hunt))
             candidates[n++] = ((int)(v.Hunger / 1_000) - 1, ActionKind.Hunt);
         // Reproduction only when safe and needs are low (TryScanMate checks vitals, stage, caps and a mate in sight).
-        if (threat is null && (current == ActionKind.Mate || mateTarget is not null))
+        if (threat is null && !inTownAlarm && (current == ActionKind.Mate || mateTarget is not null))
             candidates[n++] = (250 + e.Psyche.Sociability / 4, ActionKind.Mate);
-        if (threat is null && (fatigue >= cfg.RestStartFatigue || current == ActionKind.Rest))
+        if (threat is null && !inTownAlarm && (fatigue >= cfg.RestStartFatigue || current == ActionKind.Rest))
             candidates[n++] = ((int)(fatigue * 9 / 10_000), ActionKind.Rest);
         // Sleep in the species' window when fed and safe (R1); guards keep watch at night.
-        if (threat is null && (current == ActionKind.Sleep || WantsToSleep(e, v, now)))
+        if (threat is null && !inTownAlarm && (current == ActionKind.Sleep || WantsToSleep(e, v, now)))
             candidates[n++] = (BodyCfg.SleepScore, ActionKind.Sleep);
         // Settlement work when nothing urgent: what the town needs (deliver, harvest, gather food or wood).
-        if (threat is null && e.SettlementId != 0 && (current == ActionKind.Work || PlanWork(e) != WorkGoal.None))
+        if (threat is null && !inTownAlarm && e.SettlementId != 0 && (current == ActionKind.Work || PlanWork(e) != WorkGoal.None))
             candidates[n++] = (TownCfg.WorkScore, ActionKind.Work);
         // Taming a nearby wild animal when safe, fed and the town can spare food (T019).
-        if (threat is null && (current == ActionKind.Tame || tameTarget is not null))
+        if (threat is null && !inTownAlarm && (current == ActionKind.Tame || tameTarget is not null))
             candidates[n++] = (TameCfg.TameScore, ActionKind.Tame);
         // Reading when fed, safe and the town has no work for this member (T017).
-        if (threat is null && (current == ActionKind.Read || WantsToRead(e, v)))
+        if (threat is null && !inTownAlarm && (current == ActionKind.Read || WantsToRead(e, v)))
             candidates[n++] = (SkillCfg.ReadScore, ActionKind.Read);
         candidates[n++] = (50, ActionKind.Wander);
         for (int i = 0; i < n; i++)
@@ -558,6 +565,9 @@ public sealed partial class SimulationWorld
                 break;
             case ActionKind.Flee:
                 if (threat is null || FleeStep(e, threat) < 0) return false;
+                if (e.Job == Job.Guard && SettlementOf(e) is { } fleeTown && IsTownAlarmActive(fleeTown, now)
+                    && (e.Mind.Kind is not (ActionKind.Gather or ActionKind.Flee) || e.Mind.TargetEntity != fleeTown.AlarmThreatId))
+                    Emit(new WorldEvent(0, now, EventKinds.GuardRetreated, 0, e.Id.Value, fleeTown.AlarmThreatId, e.X, e.Y, fleeTown.Id));
                 break;
             case ActionKind.Hunt:
                 if (e.Mind.NoHuntUntil > now || StageOf(e, now) == LifeStage.Juvenile) return false;
@@ -573,6 +583,12 @@ public sealed partial class SimulationWorld
                 if (defendTarget is null) return false;
                 huntTarget = defendTarget.Id.Value;
                 if (e.Job == Job.Guard) Emit(new WorldEvent(0, now, EventKinds.GuardAlert, 0, e.Id.Value, defendTarget.Id.Value, defendTarget.X, defendTarget.Y, e.SettlementId));
+                break;
+            case ActionKind.Gather:
+                if (SettlementOf(e) is not { } gTown || !IsTownAlarmActiveForMember(e, gTown, now)) return false;
+                huntTarget = gTown.AlarmThreatId;
+                if (e.Job == Job.Guard && (e.Mind.Kind is not (ActionKind.Gather or ActionKind.Flee) || e.Mind.TargetEntity != huntTarget))
+                    Emit(new WorldEvent(0, now, EventKinds.GuardRetreated, 0, e.Id.Value, huntTarget, e.X, e.Y, gTown.Id));
                 break;
             case ActionKind.Tame:
                 if (tameTarget is null) return false;
@@ -599,7 +615,7 @@ public sealed partial class SimulationWorld
         e.Action = (int)kind;
         e.Mind.Path = kind == ActionKind.Wander ? [wanderCell] : path;
         e.Mind.PathIndex = 0;
-        e.Mind.TargetEntity = kind is ActionKind.Hunt or ActionKind.Mate or ActionKind.Defend or ActionKind.Tame ? huntTarget : threat?.Id.Value ?? 0;
+        e.Mind.TargetEntity = kind is ActionKind.Hunt or ActionKind.Mate or ActionKind.Defend or ActionKind.Tame or ActionKind.Gather ? huntTarget : threat?.Id.Value ?? 0;
         e.Mind.HuntUntil = now + (kind switch { ActionKind.Mate => options.Ecology.MateGiveUpTicks, ActionKind.Tame => TameCfg.GiveUpTicks, _ => options.Ecology.HuntGiveUpTicks });
         e.Mind.AttackReadyTick = now;
         e.Mind.FleeStepsDone = 0;
@@ -668,6 +684,9 @@ public sealed partial class SimulationWorld
                 return;
             case ActionKind.Tame:
                 TameStep(e, now);
+                return;
+            case ActionKind.Gather:
+                GatherStep(e, now);
                 return;
             case ActionKind.Flee:
                 var threat = FindLive(e.Mind.TargetEntity) is int ti and >= 0 ? entities[ti] : null;

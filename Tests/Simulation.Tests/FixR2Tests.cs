@@ -1131,28 +1131,31 @@ internal static class FixR2Tests
                 settlements: SettlementConfig.Default with { FarmPlots = 0, Radius = 10, FoodTarget = 0, WoodTarget = 0 });
 
             world.SubmitCommand(new FoundSettlementCommand(W, God, CommandModes.God, 18, 7, Faction.Human, "Keep"));
-            world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 22, 7, Human, Sex.Female)); // becomes Guard -> Aggressor A
+            world.SubmitCommand(new SpawnEntityCommand(W, God, CommandModes.God, 18, 7, Human, Sex.Female)); // Guard -> stays near town center (18,7)
             world.Step();
             long cursor = world.ReadEvents(0, 1).LatestSequence;
             Run(world, 15, ref cursor);
 
             var initialPeople = world.ReadSnapshot().Chunks.SelectMany(c => c).Where(r => r.VisualKey == Human).Select(r => r.Id.Value).ToList();
             long aggressorA = initialPeople.Single(id => world.ReadEntityDetails(W, new EntityId(id))!.Job == Job.Guard);
-            world.SetHealthForTest(aggressorA, 200_000); // dies cleanly on dragon counter-strike
+            world.SetHealthForTest(aggressorA, 200_000); // dies cleanly on 1st dragon counter-strike
+            var (ax, ay) = world.PositionOf(aggressorA);
 
-            long aggressorB = Spawn(world, 24, 7, Human, ref cursor, Sex.Female);
+            long aggressorB = Spawn(world, ax + 1, ay, Human, ref cursor, Sex.Female);
             world.SetBraveryForTest(aggressorB, 1000);
             world.SetSkillForTest(aggressorB, Skill.Scholarship, 10_000); // fights back immediately with friends/range
-            long ally1 = Spawn(world, 25, 7, Human, ref cursor, Sex.Female);
+            long ally1 = Spawn(world, ax, ay - 1, Human, ref cursor, Sex.Female);
             world.SetBraveryForTest(ally1, 1000);
-            long ally2 = Spawn(world, 25, 6, Human, ref cursor, Sex.Female);
+            long ally2 = Spawn(world, ax - 1, ay, Human, ref cursor, Sex.Female);
             world.SetBraveryForTest(ally2, 1000);
+            long ally3 = Spawn(world, ax + 1, ay - 1, Human, ref cursor, Sex.Female);
+            world.SetBraveryForTest(ally3, 1000);
 
-            // Bystander is adjacent to dragon tile (23,7), timid, penned from fleeing outside reach, never hits dragon.
-            long bystander = Spawn(world, 23, 8, Human, ref cursor, Sex.Male);
+            // Bystander is adjacent to dragon tile (ax+2, ay), timid, uncornered, never hits dragon.
+            long bystander = Spawn(world, ax + 2, ay + 1, Human, ref cursor, Sex.Male);
             world.SetTraitsForTest(bystander, -1000, -1000);
 
-            long dragon = Spawn(world, 23, 7, SpeciesCatalog.Dragon, ref cursor);
+            long dragon = Spawn(world, ax + 2, ay, SpeciesCatalog.Dragon, ref cursor);
             // Guarantee aggressor A lands an early hit before aggressor B starts; dragon responds to A, kills A, then shifts to B.
             var events = Run(world, 200, ref cursor);
 
@@ -1197,8 +1200,10 @@ internal static class FixR2Tests
             }
 
             Check(!priorAggressors.Contains(bystander), "bystander stayed peaceful");
-            Check(priorAggressors.Contains(aggressorA) && aggBHitDragon, "both aggressors struck the dragon");
-            Check(aggADied, "aggressor A died to dragon retaliation");
+            string evDump = string.Join(", ", events.Where(e => e.Kind is EventKinds.Attacked or EventKinds.EntityDied or EventKinds.TownAlarm or EventKinds.GuardRetreated).Select(e => $"t{e.Tick}:k{e.Kind}:{e.Actor}->{e.Target}"));
+            Check(priorAggressors.Contains(aggressorA) && aggBHitDragon,
+                $"both aggressors struck the dragon (aggA={aggressorA} hit={priorAggressors.Contains(aggressorA)}, aggB={aggressorB} hit={aggBHitDragon}; [{evDump}])");
+            Check(aggADied, $"aggressor A died to dragon retaliation ([{evDump}])");
             Check(dragonKilledTargetThenRetargeted && dragonTargetsHit.Count >= 2,
                 $"expected dragon retaliation to kill target and shift to second prior aggressor (targets=[{string.Join(",", dragonTargetsHit)}], aggADied={aggADied})");
             Check(!events.Any(e => e.Actor == dragon && e.Target == bystander && (e.Kind == EventKinds.Attacked || (e.Kind == EventKinds.ActionStarted && e.Reason == (int)ActionKind.Defend))),

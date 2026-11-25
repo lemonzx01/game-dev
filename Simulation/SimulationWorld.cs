@@ -112,6 +112,7 @@ public sealed partial class SimulationWorld : ISimulation
                 Execute(commands.Dequeue(), next);
             LastDiscretionaryRun = scheduler.Run(next, item => RunWork(item, next), () => candidateVisitsThisTick < MindCfg.CandidateVisitBudgetPerTick);
             ProcessPaths(next);
+            TickDangerAlarms(next);
             phase?.Invoke();
             if (eventKind.HasValue)
                 Emit(new WorldEvent(0, next, eventKind.Value));
@@ -442,6 +443,7 @@ public sealed partial class SimulationWorld : ISimulation
         options.Magic.WriteCanonical(writer);
         options.Taming.WriteCanonical(writer);
         options.Body.WriteCanonical(writer);
+        options.Danger.WriteCanonical(writer);
         var psy = options.Psyche;
         foreach (int v in new[] { psy.MemoryCap, psy.RelationshipCap, psy.FearDecayPerTick, psy.TraitJitter, psy.DangerMemoryTicks, psy.DangerAvoidRadius, psy.FearBlocksMatingAbove })
             writer.Write(v);
@@ -479,6 +481,7 @@ public sealed partial class SimulationWorld : ISimulation
         WriteEcology(writer);
         WriteLife(writer);
         WriteSettlements(writer);
+        WriteDanger(writer);
         writer.Write(nextMemoryId);
         // 5. RNG streams, retained events, durable milestones.
         writer.Write((uint)streamTags.Length);

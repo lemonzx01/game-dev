@@ -601,11 +601,11 @@ internal static class FixR1Tests
         // From the end of payload: settlements(4)=0, carcasses(4)=0... wait: settlements is at the very end!
         // In payload order before settlements: entities' last entity ends with ReadingCount(4), ReadingBook(8), ReadingSince(8), Adventure(4+8+8+4+8? No: Mana(8)+ManaTick(8)+TamedTo(4)+TamerId(8)+Trust(4)=32), deaths(4)=0, milestones(4)=0, pathQueue(4)=0, carcasses(4)=0, settlements(4)=0.
         // WriteEntity writes skills+adventure BEFORE deaths/milestones/pathQueue/carcasses/settlements!
-        // Exact trailing size after ReadingCount(uint32): ReadingBook(8) + ReadingSince(8) + Adventure(40) + deaths(4) + milestones(4) + pathQueue(4) + carcasses(4) + settlements(4) = 76 bytes!
+        // Exact trailing size after ReadingCount(uint32): ReadingBook(8) + ReadingSince(8) + Adventure(40) + deaths(4) + milestones(4) + pathQueue(4) + carcasses(4) + settlements(4) + dangerSettlements(4) = 80 bytes!
         byte[] corruptLenSave = RewritePayload(cleanSave, payload =>
         {
             var copy = (byte[])payload.Clone();
-            int offset = copy.Length - 76 - 4;
+            int offset = copy.Length - 80 - 4;
             Check(BitConverter.ToUInt32(copy, offset) == 0u, "expected Reading.Count == 0 at known offset");
             BitConverter.GetBytes(0xFFFFFFFFu).CopyTo(copy, offset);
             return copy;

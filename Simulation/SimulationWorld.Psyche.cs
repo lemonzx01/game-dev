@@ -175,6 +175,15 @@ public sealed partial class SimulationWorld
         list.Insert(at < 0 ? list.Count : at, added);
     }
 
+    /// <summary>True if the entity has any non-expired threat or attack memory.</summary>
+    private bool HasRecentDangerMemory(EntityState e, long now)
+    {
+        foreach (var m in e.Psyche.Memories)
+            if (m.Kind is MemoryKind.SawThreat or MemoryKind.WasAttacked && now - m.LastRelevantTick <= PsyCfg.DangerMemoryTicks)
+                return true;
+        return false;
+    }
+
     /// <summary>True if (x, y) is within DangerAvoidRadius of a danger remembered in the last DangerMemoryTicks.</summary>
     private bool RemembersDangerNear(EntityState e, int x, int y, long now)
     {

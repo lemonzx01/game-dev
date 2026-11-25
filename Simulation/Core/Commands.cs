@@ -86,6 +86,12 @@ public static class EventKinds
     public const int AnimalTamed = 224;
     /// <summary>R1: Actor = sleeper woken early, Reason = 1 woken by a nearby fight.</summary>
     public const int WokeUp = 225;
+    /// <summary>R2: Actor = guard, Target = threat, Reason = settlement id, Amount = 1 raised.</summary>
+    public const int TownAlarm = 230;
+    /// <summary>R2: Actor = guard, Target = threat, Reason = settlement id (guard retreated from an outmatching threat).</summary>
+    public const int GuardRetreated = 231;
+    /// <summary>R2: Target = settlement id, Reason = settlement id (town alarm ended once threat left or died).</summary>
+    public const int TownAlarmEnded = 232;
     /// <summary>Actor = EntityId, Target = threat id (Flee), X/Y = position, Reason = <see cref="ActionKind"/>.</summary>
     public const int ActionStarted = 300;
     /// <summary>Actor = EntityId, Reason = <see cref="ActionKind"/> whose path search found nothing reachable.</summary>

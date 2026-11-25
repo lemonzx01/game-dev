@@ -18,7 +18,7 @@ public sealed partial class SimulationWorld
 {
     private static readonly byte[] Magic = "FWSSAVE\0"u8.ToArray();
     public const uint SaveFormatVersion = 1;
-    public const uint StateSchema = 16;
+    public const uint StateSchema = 17;
     private static readonly JsonSerializerOptions OptionsJson = new() { WriteIndented = false };
 
     // ---- Save ----------------------------------------------------------------------------------
@@ -109,6 +109,7 @@ public sealed partial class SimulationWorld
         foreach (var (_, c) in carcasses) { w.Write(c.Cell); w.Write(c.Meat); w.Write(c.DecayTick); w.Write(c.Token); }
 
         WriteSettlements(w);
+        WriteDanger(w);
     }
 
     private static void WriteEvent(BinaryWriter w, in WorldEvent e)
@@ -336,6 +337,7 @@ public sealed partial class SimulationWorld
             carcasses.Add(c.Cell, c);
         }
         ReadSettlements(r, Count);
+        ReadDangerFrom(r);
         ValidateCropScheduler();
         ValidateSettlementEntities();
         snapshot = null;

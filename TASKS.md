@@ -27,7 +27,7 @@ T001 and T002 are DONE. A007 revision 2 is Accepted. Any agent may take any uncl
 | T019 | Stretch | Simple combat, magic, dragon, tame | T009,T010,T014 | separate small tasks; costs and valid targets; one dragon species/tame trust if time | DONE (simulation; presentation follow-up after T018-env) |
 | T020 | Stretch | Possession movement/interact | T008,T014 | take/release control, same ID/state, AI resumes, other agents continue | DESIGN READY (docs/design/T020-possession.md); implement after FIX-R1 merges |
 | R1 | Should | Species bodies (per-species vitals) + sleep/wake cycle + healing | FIX-R2 | per-species hunger rates; night sleep at home, nocturnal wolves; sleepers wake on attacks; healing only fed+resting; no perf regression | DONE (merged; docs/handoffs/R1.md) |
-| R2 | Should | Danger response: guards retreat when outmatched, alarm, group defence (K1) | FIX-R2 | lone guard vs dragon retreats and lives; 4+ guards engage together; alarm stops work then resumes | TODO |
+| R2 | Should | Danger response: guards retreat when outmatched, alarm, group defence (K1) | FIX-R2 | lone guard vs dragon retreats and lives; 4+ guards engage together; alarm stops work then resumes | IN_PROGRESS (`feat/R2-danger`, Antigravity) |
 | R3 | Should | Houses (built from wood) and households; births need housing | R1 | wood cost + labour ticks; population <= housing; children near parents; save mid-construction | TODO |
 | R4 | Could | Weather, cold/heat exposure, shelter | R1,R3 | seeded weather; unsheltered cold damage; weather changes crop growth | TODO |
 | R5 | Could | Spoilage, supply/demand prices, migration, town abandonment | R3 | bounded prices; starving migrate; abandoned town milestone | TODO |

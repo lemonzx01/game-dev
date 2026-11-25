@@ -60,6 +60,11 @@ internal sealed class Settlement
     public long FoundedTick;
     public readonly List<FarmPlot> Plots = new();
     public readonly SortedDictionary<int, long> BlockedBuyers = new(); // buyer settlement id -> cooldown until tick
+    // R2 danger alarm state (persisted via WriteDanger/ReadDangerFrom; included in StateHash)
+    public long AlarmUntil;
+    public long AlarmThreatId;
+    public int AlarmThreatX, AlarmThreatY;
+    public long AlarmLastSeenTick;
     // Derived runtime cache (not saved or hashed): cleared whenever marketRevision or this town's trade state changes.
     internal long CachedDealRevision = -1;
     internal Settlement? CachedDealPartner;
