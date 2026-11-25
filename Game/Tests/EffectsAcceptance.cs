@@ -57,23 +57,45 @@ public partial class EffectsAcceptance : Node
                 return;
             }
 
-            bool hitSeen = false;
-            long dragon = 0;
-            int lastX = int.MinValue, turnsSeen = 0, bodiesChecked = 0;
-            bool impactSeen = false; // checked on the frame of a real hit (effects expire later)
-            for (int i = 0; i < 400 && (!hitSeen || turnsSeen == 0); i++)
+            // Phase A (night): a wolf at the store. With R1/R2 the town's guard keeps watch and fights a lone wolf alone, so a real
+            // hit happens; the impact effect must start on that frame. (A full-health dragon now makes guards raise the alarm and
+            // retreat instead of fighting alone, and dragons sleep at night, so the dragon is checked separately below.)
+            bridge.SpawnAt(town.X + 1, town.Y, SpeciesCatalog.Wolf);
+            bool impactSeen = false, wolfFought = false;
+            void Frame()
             {
                 bridge._Process(0.25);
                 renderer._Process(0.25);
                 effects._Process(0.25);
                 feed._Process(0.25);
-                foreach (var e in bridge.EventsThisFrame)
-                {
-                    if (e.Kind == EventKinds.CommandApplied && dragon == 0) dragon = e.Target;
-                    if (e.Kind == EventKinds.Attacked && (e.Target == dragon || e.Actor == dragon)) hitSeen = true;
-                }
+            }
+            for (int i = 0; i < 400 && !impactSeen; i++)
+            {
+                Frame();
+                if (bridge.EventsThisFrame.Any(e => e.Kind == EventKinds.Attacked)) wolfFought = true;
                 if (bridge.EventsThisFrame.Any(e => e.Kind == EventKinds.Attacked) && effects.Active.Contains("blunt-hit")) impactSeen = true;
-                // FIX-R2 #15: the dragon is drawn from its own 48 px sheet, a non-empty frame, mirrored when it last stepped left.
+            }
+            Check(wolfFought, "the guard fought the wolf in town");
+            Check(impactSeen, "a real hit started an impact effect");
+
+            // Phase B (day): a dragon spawned away from both towns is awake and wanders; check what is drawn for it.
+            while (bridge.Snapshot.Time.TickOfDay < bridge.TicksPerDay * 3 / 10) Frame(); // 07:12, dragons are awake
+            var towns = bridge.Settlements();
+            int site = Enumerable.Range(0, map.Cells.Length).First(c =>
+            {
+                int x = c % map.Width, y = c / map.Width;
+                return map.Cells[c] == Terrain.Grass && x > 4 && y > 4 && x < map.Width - 5 && y < map.Height - 5
+                       && towns.All(t => System.Math.Max(System.Math.Abs(t.X - x), System.Math.Abs(t.Y - y)) > t.Radius + 6);
+            });
+            bridge.SpawnAt(site % map.Width, site / map.Width, SpeciesCatalog.Dragon);
+            long dragon = 0;
+            int lastX = int.MinValue, turnsSeen = 0, bodiesChecked = 0;
+            for (int i = 0; i < 800 && (dragon == 0 || turnsSeen == 0 || bodiesChecked == 0); i++)
+            {
+                Frame();
+                foreach (var e in bridge.EventsThisFrame)
+                    if (e.Kind == EventKinds.CommandApplied && dragon == 0 && bridge.Details(e.Target)?.SpeciesKey == SpeciesCatalog.Dragon) dragon = e.Target;
+                // FIX-R2 #15: the dragon is drawn 1:1 from its row of the owner sheet, a non-empty frame, mirrored when it last stepped left.
                 if (dragon != 0 && bridge.Snapshot.Chunks.SelectMany(c => c).FirstOrDefault(r => r.Id.Value == dragon) is { VisualKey: SpeciesCatalog.Dragon } row
                     && row.LifeState == LifeStates.Alive)
                 {
@@ -99,9 +121,7 @@ public partial class EffectsAcceptance : Node
                 }
             }
             Check(dragon != 0 && bridge.Details(dragon)?.SpeciesKey == SpeciesCatalog.Dragon, "the dragon was spawned");
-            Check(hitSeen, "the dragon fought");
             Check(turnsSeen > 0 && bodiesChecked > 0, "the dragon moved sideways at least once (facing checked) and its frames were checked");
-            Check(impactSeen, "a real hit started an impact effect");
 
             // Firebolt: a fireball flies, then lands as an impact; Heal and taming play their own effects.
             effects.Advance(5f);

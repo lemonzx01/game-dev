@@ -6,18 +6,17 @@ link the fix branch. Severity: **H** = wrong outcome or blocks play, **M** = not
 ## Being fixed now
 | ID | Sev | Issue | Owner / where |
 |---|---|---|---|
-| R2 | M | Guards retreat / alarm / group defence (fixes K1). | Antigravity, `feat/R2-danger` (awaiting commit; `EffectsAcceptance` update by Claude Code) |
 | FIX-R3 | H/M/L | 17 findings of the Codex R1 review (K11). | Claude Code, after R2 merges |
 | T019 #13 | M | Durable milestone archive cap (ARCHITECTURE §9) still open; design proposal in `docs/handoffs/FIX-R2.md`. | unassigned |
 
-Done: FIX-R1 (12/12), FIX-R2 (14 of 15; #13 open), FIX-R2-visuals.
+Done: FIX-R1 (12/12), FIX-R2 (14 of 15; #13 open), FIX-R2-visuals, R1, R2.
 
 ## Gameplay / simulation
 | ID | Sev | Issue | Notes |
 |---|---|---|---|
 | K10 | H | Ecology out of balance (WorldReport, seed 1, 30 days): rabbits 282 of 348 creatures, deer down to 2, starvation 58% of deaths, 0 trades. | `docs/reports/example-world-1-30d.md`. Needs a balance task (reproduction vs food regrowth vs predation) measured with WorldReport over several seeds. |
 | K11 | H/M | R1 review: 17 findings (3 High: sleep→rest healing differs live vs loaded; noise lost when the event log is full; arriving home at dawn sleeps a whole day). | `docs/reviews/2026-11-codex-review-R1.md`; fix as FIX-R3 after R2 merges (same files). |
-| K1 | M | (R2 in progress) Guards never retreat. Against a dragon, each new guard volunteers and fights to the death one after another; a town can lose most adults. | Observed in the T019 visual run (Ashford 10 → 7 people in ~20 s). Needs a "too strong" check (compare power and health) and retreat or group defence. |
+| K1 | — | FIXED by R2 (2026-11-25): guards retreat and raise the alarm when outmatched. Previously: guards never retreat. Against a dragon, each new guard volunteers and fights to the death one after another; a town can lose most adults. | Observed in the T019 visual run (Ashford 10 → 7 people in ~20 s). Needs a "too strong" check (compare power and health) and retreat or group defence. |
 | K2 | M | People who fear an animal (wolves, dragons) can never tame it: they flee before feeding. | T019 handoff. Needs a brave-tamer rule. |
 | K3 | L | Early games have almost no mages: magic needs one finished book (300 pages of idle reading). | By design for now; tune after playtest. |
 | K4 | L | No weapons or armour items; guards' damage stands in for being armed. Dragons have no flight or breath attack. | GDD equipment and dragon abilities are future work. |

@@ -160,18 +160,24 @@ def person_frames(s):
             'dead': lying(s, False)}
 
 
+def resting(sprite):
+    """Lying down asleep: upright, flattened to 70% height (unlike the legs-up dead pose)."""
+    w, h = sprite.size
+    return place(sprite.resize((w, max(1, h * 7 // 10)), Image.NEAREST))
+
+
 def animal_frames(s, hop=False):
     up = (-6, -10) if hop else (-2, -2)
     return {'idle0': place(s), 'idle1': place(s, dy=1), 'walk0': place(s, shear=1), 'walk1': place(s, dy=up[0]),
             'walk2': place(s, shear=-1), 'walk3': place(s, dy=up[1] if hop else up[0]), 'work0': place(s, dy=2, shear=4),
             'work1': place(s, dy=3, shear=6), 'atk0': place(s, dx=-3, dy=2), 'atk1': place(s, dx=6, shear=4),
-            'read0': place(s), 'read1': place(s, dy=1), 'dead': lying(s, True)}
+            'read0': resting(s), 'read1': resting(s), 'dead': lying(s, True)}  # animals never read: read = asleep
 
 
 def dragon_frames(a, b, c):
     return {'idle0': place(a), 'idle1': place(b), 'walk0': place(c), 'walk1': place(a, dy=-2), 'walk2': place(c, dx=2),
             'walk3': place(b, dy=-2), 'work0': place(a, dy=2, shear=5), 'work1': place(a, dy=3, shear=8),
-            'atk0': place(b, dx=-3, shear=-5), 'atk1': place(c, dx=6, shear=8), 'read0': place(a), 'read1': place(b),
+            'atk0': place(b, dx=-3, shear=-5), 'atk1': place(c, dx=6, shear=8), 'read0': resting(a), 'read1': resting(a),
             'dead': lying(a, True)}
 
 

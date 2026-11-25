@@ -288,7 +288,7 @@ public partial class MapRenderer : Node2D
             ActionKind.Hunt or ActionKind.Defend => ColAttack + (int)(t * 4f) % 2,
             ActionKind.Eat or ActionKind.Drink when animal => ColWork + (int)(t * 1.5f) % 2,
             ActionKind.Rest => ColIdle,
-            ActionKind.Sleep => ColDead, // lying down; the dead tint is only applied to the dead
+            ActionKind.Sleep => animal ? ColRead : ColDead, // people lie down; animals use their resting frame (their dead frame is legs-up)
             _ => ColIdle + (int)(t * 1.5f) % 2,
         };
     }

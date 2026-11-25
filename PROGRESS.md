@@ -6,6 +6,10 @@ T001–T014 DONE and merged to main (2026-11-24; T003–T014 merged by owner ins
 
 ## Handoff log
 
+**2026-11-25 | Antigravity + Claude Code | R2 danger response | main | merged**
+
+- Antigravity: integer threat assessment, guard retreat + town alarm (TownAlarm/GuardRetreated/TownAlarmEnded), Gather action, group defence, danger-memory avoidance; schema 17; 123/123 tests. Claude Code: integrated with main, rewrote EffectsAcceptance for the new behaviour, upright sleeping frames for animals. All 6 Godot acceptances pass; --body 1,000-entity p99 1.56 ms. Fixes K1.
+
 **2026-11-25 | Claude Code | Integrated Codex R1 review + WorldReport | main | merged**
 
 - Codex's R1 review (17 findings) merged; fixes queued as FIX-R3 after R2. WorldReport tool merged (Tests/WorldReport; fixed a stray brace that broke its build on the committed branch). Its 30-day example shows an ecology imbalance (K10) -> task RB.
