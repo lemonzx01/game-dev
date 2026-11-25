@@ -6,7 +6,7 @@
 | Agent | Google Antigravity (self-reviewed per A009) |
 | Branch | `fix/R2-review-T019` |
 | Worktree | `F:\Code\game-dev\worktrees\FIX-R2-antigravity` (also merged `--no-ff` to local `main` at `F:\Code\game-dev`) |
-| State | `REVIEW` (local `main` merged & verified; `git push origin` requires interactive GitHub credentials; Finding 13 recorded `Open`) |
+| State | `DONE`: merged to main and pushed by Claude Code (2026-11-25; Antigravity could not push). Verified on main: 112/112 tests and the T007/T008/GodTools/Settlement/Effects/Mood acceptances pass. Finding 13 stays `Open` (design proposal below). |
 | StateSchema | 15 (bumped from 14; golden hash re-pinned in `Tests/Simulation.Tests/Program.cs`) |
 | Source Review | `docs/reviews/2026-11-codex-review-T019.md` |
 | Scope Split | Simulation findings `1–9, 13, 14, 15-sim` (presentation `10–12, 15-visual` completed by Claude Code in `docs/handoffs/FIX-R2-visuals.md`) |
