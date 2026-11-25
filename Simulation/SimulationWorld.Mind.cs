@@ -414,7 +414,7 @@ public sealed partial class SimulationWorld
             distance = threat is null ? 0 : Math.Abs(threat.X - e.X) + Math.Abs(threat.Y - e.Y);
         }
 
-        if (!resuming || resumePhase <= ScanPhase.Heal)
+        if (!IsAsleep(e) && (!resuming || resumePhase <= ScanPhase.Heal)) // FIX-R3 #6: no casting in one's sleep
         {
             if (!TryScanHealTarget(e, now, out var healTarget)) return;
             if (healTarget is not null) CastHeal(e, healTarget, now);
@@ -423,7 +423,8 @@ public sealed partial class SimulationWorld
         var current = e.Mind.Kind;
         var town = SettlementOf(e);
         bool inTownAlarm = IsTownAlarmActiveForMember(e, town, now);
-        if (threat is null && !inTownAlarm && current is not (ActionKind.Idle or ActionKind.Wander) && now < e.Mind.CommitUntil)
+        if (threat is null && !inTownAlarm && current is not (ActionKind.Idle or ActionKind.Wander) && now < e.Mind.CommitUntil
+            && !(IsAsleep(e) && NeedsUrgent(e, now))) // FIX-R3 #9: hunger or thirst wakes a sleeper
         {
             ClearScanState(ref e.Mind);
             if (resuming) ScheduleThink(e, now + cfg.ThinkIntervalTicks);
@@ -513,6 +514,9 @@ public sealed partial class SimulationWorld
             candidates[n++] = (250 + e.Psyche.Sociability / 4, ActionKind.Mate);
         if (threat is null && !inTownAlarm && (fatigue >= cfg.RestStartFatigue || current == ActionKind.Rest))
             candidates[n++] = ((int)(fatigue * 9 / 10_000), ActionKind.Rest);
+        // FIX-R3 #11: with Body on, a badly wounded creature rests to recover before working (realistic healing at rest).
+        else if (BodyCfg.Enabled && threat is null && !inTownAlarm && v.Health < BodyCfg.InjuredRestHealth)
+            candidates[n++] = (BodyCfg.InjuredRestScore, ActionKind.Rest);
         // Sleep in the species' window when fed and safe (R1); guards keep watch at night.
         if (threat is null && !inTownAlarm && (current == ActionKind.Sleep || WantsToSleep(e, v, now)))
             candidates[n++] = (BodyCfg.SleepScore, ActionKind.Sleep);
@@ -610,9 +614,9 @@ public sealed partial class SimulationWorld
 
         FinishReading(e, now); // switching away mid-session credits exactly the pages read so far
         EndSleep(e, now);      // switching away from sleep closes the sleep-rate segments first (R1)
+        e.Mind.Kind = kind;    // FIX-R3 #1: the incoming kind first, so the rest/heal rates derive from it (as after load)
+        e.Action = kind == ActionKind.Sleep ? (int)ActionKind.Wander : (int)kind; // #17: Sleep is published once asleep
         SetResting(e, kind == ActionKind.Rest, now);
-        e.Mind.Kind = kind;
-        e.Action = (int)kind;
         e.Mind.Path = kind == ActionKind.Wander ? [wanderCell] : path;
         e.Mind.PathIndex = 0;
         e.Mind.TargetEntity = kind is ActionKind.Hunt or ActionKind.Mate or ActionKind.Defend or ActionKind.Tame or ActionKind.Gather ? huntTarget : threat?.Id.Value ?? 0;
@@ -628,6 +632,7 @@ public sealed partial class SimulationWorld
         {
             long fatigue = FatigueAt(e.Mind, now);
             long ticks = Math.Max(1, (fatigue - MindCfg.RestEndFatigue + MindCfg.RestRecoveryPerTick - 1) / MindCfg.RestRecoveryPerTick);
+            ticks = Math.Max(ticks, InjuredRestTicks(e, now));
             ScheduleStep(e, now + ticks);
         }
         else if (kind is ActionKind.Eat or ActionKind.Drink or ActionKind.Work or ActionKind.Read)
@@ -637,7 +642,7 @@ public sealed partial class SimulationWorld
         else if (kind == ActionKind.Sleep)
         {
             if (SleepsAtHome(e)) RequestPath(e, kind); // townsfolk walk home first
-            else BeginSleep(e, now);
+            else BeginSleep(e, now);   // eligibility was checked above, this tick
         }
         else
         {
@@ -650,10 +655,10 @@ public sealed partial class SimulationWorld
     {
         FinishReading(e, now);
         EndSleep(e, now);
+        e.Mind.Kind = ActionKind.Idle; // FIX-R3 #1: incoming state first
+        e.Action = (int)ActionKind.Idle;
         SetResting(e, false, now);
         ClearScanState(ref e.Mind);
-        e.Mind.Kind = ActionKind.Idle;
-        e.Action = (int)ActionKind.Idle;
         e.Mind.Path = null;
         e.Mind.AwaitingPath = false;
         e.Mind.StepToken++; // cancel any pending step or path request
@@ -725,7 +730,7 @@ public sealed partial class SimulationWorld
                     return;
                 }
                 if (e.Mind.Kind == ActionKind.Read) { StartReading(e, now); return; }
-                if (e.Mind.Kind == ActionKind.Sleep) { BeginSleep(e, now); return; }
+                if (e.Mind.Kind == ActionKind.Sleep) { SleepOrReplan(e, now); return; } // FIX-R3 #3
                 if (e.Mind.Kind == ActionKind.Work) { DoWork(e, now); FinishAction(e, now); return; }
                 if (e.Mind.Kind == ActionKind.Eat && EatFromStorage(e, now)) { FinishAction(e, now); return; }
                 if (e.Mind.Kind == ActionKind.Drink) TryConsume(e.Id, ResourceKind.Water, now);

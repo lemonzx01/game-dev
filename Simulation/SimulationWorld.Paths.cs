@@ -105,7 +105,7 @@ public sealed partial class SimulationWorld
                     FailTradeOutbound(e, now); // immediate ReturnHome with cargo; deal suppressed for cooldown
                 else if (request.Kind == ActionKind.Eat) e.Mind.NoFoodUntil = now + MindCfg.UnreachableCooldownTicks;
                 else if (request.Kind is ActionKind.Work or ActionKind.Read) e.Mind.NoWorkUntil = now + TownCfg.WorkCooldownTicks;
-                else if (request.Kind == ActionKind.Sleep) { BeginSleep(e, now); return; } // home unreachable: sleep where you are
+                else if (request.Kind == ActionKind.Sleep) { SleepOrReplan(e, now); continue; } // FIX-R3 #3/#7: sleep here if still due; keep serving the queue
                 else e.Mind.NoWaterUntil = now + MindCfg.UnreachableCooldownTicks;
                 Emit(new WorldEvent(0, now, EventKinds.PathFailed, 0, e.Id.Value, 0, e.X, e.Y, (int)request.Kind));
                 FinishAction(e, now);

@@ -141,7 +141,6 @@ public sealed partial class SimulationWorld : ISimulation
             long sequence = events.NextSequence;
             events.Append(entry);
             emittedThisTick++;
-            if (entry.Kind == EventKinds.Attacked) OnNoise(entry.X, entry.Y, entry.Tick); // R1: fights wake nearby sleepers
             return sequence;
         }
         droppedThisTick++;

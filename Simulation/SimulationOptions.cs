@@ -69,6 +69,7 @@ public sealed record SimulationOptions
         Magic.Validate();
         Taming.Validate();
         Body.Validate();
+        Body.ValidateRates(Vitals, Species.Values); // FIX-R3 #13
         Danger.Validate();
         if (Map is not null && (Map.Width != MapWidth || Map.Height != MapHeight || Map.Cells.Length != MapWidth * MapHeight))
             throw new ArgumentException("Map override size must match MapWidth/MapHeight.");
