@@ -34,6 +34,7 @@ public sealed record SimulationOptions
     public MagicConfig Magic { get; init; } = MagicConfig.Default;
     public TamingConfig Taming { get; init; } = TamingConfig.Default;
     public BodyConfig Body { get; init; } = BodyConfig.Default;
+    public DangerConfig Danger { get; init; } = DangerConfig.Default;
     /// <summary>Optional hand-built map; when set, MapWidth/MapHeight must equal its size and no terrain/resources are generated.</summary>
     public MapOverride? Map { get; init; }
     public ImmutableSortedDictionary<long, AuthorityGrant> Grants { get; init; } = ImmutableSortedDictionary<long, AuthorityGrant>.Empty;
@@ -68,6 +69,7 @@ public sealed record SimulationOptions
         Magic.Validate();
         Taming.Validate();
         Body.Validate();
+        Danger.Validate();
         if (Map is not null && (Map.Width != MapWidth || Map.Height != MapHeight || Map.Cells.Length != MapWidth * MapHeight))
             throw new ArgumentException("Map override size must match MapWidth/MapHeight.");
         foreach (var (issuer, grant) in Grants)

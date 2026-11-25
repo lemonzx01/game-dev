@@ -76,18 +76,21 @@ public sealed partial class SimulationWorld
             else
             {
                 Func<int, bool>? canVisit = null;
+                int w = options.MapWidth;
                 if (AnimalLeashTarget(e, out int hx, out int hy, out int leashRadius))
                 {
                     int limit = Math.Max(leashRadius, Math.Max(Math.Abs(e.X - hx), Math.Abs(e.Y - hy)));
-                    int w = options.MapWidth;
                     canVisit = cell => Math.Max(Math.Abs(cell % w - hx), Math.Abs(cell / w - hy)) <= limit;
                 }
+                bool avoidDanger = request.Kind == ActionKind.Work
+                    && e.WorkGoal is WorkGoal.Harvest or WorkGoal.GatherFood or WorkGoal.GatherWood
+                    && HasRecentDangerMemory(e, now);
                 path = navigation.FindNearest(terrain, options.MapWidth, options.MapHeight, e.X, e.Y,
                     MindCfg.PerceptionRadius, (int)budget,
                     cell => request.Kind switch
                     {
                         ActionKind.Eat => CanEatAt(e, cell),
-                        ActionKind.Work => IsWorkGoal(e, cell),
+                        ActionKind.Work => IsWorkGoal(e, cell) && (!avoidDanger || !RemembersDangerNear(e, cell % w, cell / w, now)),
                         ActionKind.Read or ActionKind.Sleep => SettlementOf(e) is { } home && cell == Cell(home.X, home.Y),
                         _ => CanConsumeAt(cell, ResourceKind.Water),
                     }, out expanded, canVisit);
