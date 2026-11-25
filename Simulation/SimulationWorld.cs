@@ -140,6 +140,7 @@ public sealed partial class SimulationWorld : ISimulation
             long sequence = events.NextSequence;
             events.Append(entry);
             emittedThisTick++;
+            if (entry.Kind == EventKinds.Attacked) OnNoise(entry.X, entry.Y, entry.Tick); // R1: fights wake nearby sleepers
             return sequence;
         }
         droppedThisTick++;
@@ -440,6 +441,7 @@ public sealed partial class SimulationWorld : ISimulation
         options.Combat.WriteCanonical(writer);
         options.Magic.WriteCanonical(writer);
         options.Taming.WriteCanonical(writer);
+        options.Body.WriteCanonical(writer);
         var psy = options.Psyche;
         foreach (int v in new[] { psy.MemoryCap, psy.RelationshipCap, psy.FearDecayPerTick, psy.TraitJitter, psy.DangerMemoryTicks, psy.DangerAvoidRadius, psy.FearBlocksMatingAbove })
             writer.Write(v);

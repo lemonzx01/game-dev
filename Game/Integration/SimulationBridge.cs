@@ -55,6 +55,7 @@ public partial class SimulationBridge : Node
         simulation = new SimulationWorld(new SimulationOptions
         {
             WorldId = World, Seed = Seed, Species = SpeciesCatalog.Default,
+            Body = BodyConfig.Realistic, // R1: species bodies, sleep/wake cycle, faster healing at rest
             Grants = ImmutableSortedDictionary<long, AuthorityGrant>.Empty.Add(ScenarioAuthor, AuthorityGrant.God)
         });
         Map = simulation.ReadMap();

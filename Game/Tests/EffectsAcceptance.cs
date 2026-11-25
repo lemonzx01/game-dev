@@ -60,6 +60,7 @@ public partial class EffectsAcceptance : Node
             bool hitSeen = false;
             long dragon = 0;
             int lastX = int.MinValue, turnsSeen = 0, bodiesChecked = 0;
+            bool impactSeen = false; // checked on the frame of a real hit (effects expire later)
             for (int i = 0; i < 400 && (!hitSeen || turnsSeen == 0); i++)
             {
                 bridge._Process(0.25);
@@ -71,6 +72,7 @@ public partial class EffectsAcceptance : Node
                     if (e.Kind == EventKinds.CommandApplied && dragon == 0) dragon = e.Target;
                     if (e.Kind == EventKinds.Attacked && (e.Target == dragon || e.Actor == dragon)) hitSeen = true;
                 }
+                if (bridge.EventsThisFrame.Any(e => e.Kind == EventKinds.Attacked) && effects.Active.Contains("blunt-hit")) impactSeen = true;
                 // FIX-R2 #15: the dragon is drawn from its own 48 px sheet, a non-empty frame, mirrored when it last stepped left.
                 if (dragon != 0 && bridge.Snapshot.Chunks.SelectMany(c => c).FirstOrDefault(r => r.Id.Value == dragon) is { VisualKey: SpeciesCatalog.Dragon } row
                     && row.LifeState == LifeStates.Alive)
@@ -99,7 +101,7 @@ public partial class EffectsAcceptance : Node
             Check(dragon != 0 && bridge.Details(dragon)?.SpeciesKey == SpeciesCatalog.Dragon, "the dragon was spawned");
             Check(hitSeen, "the dragon fought");
             Check(turnsSeen > 0 && bodiesChecked > 0, "the dragon moved sideways at least once (facing checked) and its frames were checked");
-            Check(effects.Active.Contains("blunt-hit"), "a real hit started an impact effect");
+            Check(impactSeen, "a real hit started an impact effect");
 
             // Firebolt: a fireball flies, then lands as an impact; Heal and taming play their own effects.
             effects.Advance(5f);

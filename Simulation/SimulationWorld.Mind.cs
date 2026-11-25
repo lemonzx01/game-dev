@@ -52,8 +52,9 @@ public sealed partial class SimulationWorld
     private long FatigueAt(in MindState m, long now)
     {
         long elapsed = now - m.FatigueTick;
+        long recovery = MindCfg.RestRecoveryPerTick * (m.Kind == ActionKind.Sleep && BodyCfg.Enabled ? BodyCfg.FatigueRecoveryMultiplier : 1); // R1
         return m.Resting
-            ? Math.Max(0, m.Fatigue - MindCfg.RestRecoveryPerTick * elapsed)
+            ? Math.Max(0, m.Fatigue - recovery * elapsed)
             : Math.Min(MindConfig.MaxFatigue, m.Fatigue + MindCfg.FatiguePerTick * elapsed);
     }
 
@@ -63,6 +64,7 @@ public sealed partial class SimulationWorld
         e.Mind.Fatigue = FatigueAt(e.Mind, now);
         e.Mind.FatigueTick = now;
         e.Mind.Resting = resting;
+        ReanchorBody(e, now); // R1: healing is faster while resting or asleep
     }
 
     // ---- Scheduling helpers --------------------------------------------------------------------
@@ -396,6 +398,7 @@ public sealed partial class SimulationWorld
         if (!resuming || resumePhase == ScanPhase.NearestThreat)
         {
             if (!TryScanNearestThreat(e, now, out threat, out distance)) return;
+            if (threat is not null && IsAsleep(e) && distance > BodyCfg.AwareDistance) { threat = null; distance = 0; } // R1: sleepers notice only close danger
             e.Mind.PendingThreatId = threat?.Id.Value ?? 0;
             e.Mind.PendingThreatDist = distance;
             if (threat is not null) OnThreatSeen(e, threat, distance, now); // danger raises fear and is remembered
@@ -484,7 +487,7 @@ public sealed partial class SimulationWorld
 
         EntityState? defendTarget = townThreat ?? (FightsBack(e, threat, distance, now) ? threat : null);
         long fatigue = FatigueAt(e.Mind, now);
-        Span<(int Score, ActionKind Kind)> candidates = stackalloc (int, ActionKind)[12];
+        Span<(int Score, ActionKind Kind)> candidates = stackalloc (int, ActionKind)[14];
         int n = 0;
         // Guards fight threats inside the town (T016); cornered or brave villagers with friends fight back (T019).
         if (defendTarget is not null)
@@ -503,6 +506,9 @@ public sealed partial class SimulationWorld
             candidates[n++] = (250 + e.Psyche.Sociability / 4, ActionKind.Mate);
         if (threat is null && (fatigue >= cfg.RestStartFatigue || current == ActionKind.Rest))
             candidates[n++] = ((int)(fatigue * 9 / 10_000), ActionKind.Rest);
+        // Sleep in the species' window when fed and safe (R1); guards keep watch at night.
+        if (threat is null && (current == ActionKind.Sleep || WantsToSleep(e, v, now)))
+            candidates[n++] = (BodyCfg.SleepScore, ActionKind.Sleep);
         // Settlement work when nothing urgent: what the town needs (deliver, harvest, gather food or wood).
         if (threat is null && e.SettlementId != 0 && (current == ActionKind.Work || PlanWork(e) != WorkGoal.None))
             candidates[n++] = (TownCfg.WorkScore, ActionKind.Work);
@@ -577,6 +583,9 @@ public sealed partial class SimulationWorld
                 e.WorkGoal = goal;
                 e.Job = JobFor(goal, e.Job);
                 break;
+            case ActionKind.Sleep:
+                if (!WantsToSleep(e, e.Vitals.At(now, options.Vitals), now)) return false;
+                break;
             case ActionKind.Wander:
                 wanderCell = WanderStep(e);
                 if (wanderCell < 0) return false;
@@ -584,6 +593,7 @@ public sealed partial class SimulationWorld
         }
 
         FinishReading(e, now); // switching away mid-session credits exactly the pages read so far
+        EndSleep(e, now);      // switching away from sleep closes the sleep-rate segments first (R1)
         SetResting(e, kind == ActionKind.Rest, now);
         e.Mind.Kind = kind;
         e.Action = (int)kind;
@@ -608,6 +618,11 @@ public sealed partial class SimulationWorld
         {
             RequestPath(e, kind); // searched later within the per-tick path budget
         }
+        else if (kind == ActionKind.Sleep)
+        {
+            if (SleepsAtHome(e)) RequestPath(e, kind); // townsfolk walk home first
+            else BeginSleep(e, now);
+        }
         else
         {
             ScheduleStep(e, now + MoveTicks(e));
@@ -618,6 +633,7 @@ public sealed partial class SimulationWorld
     private void StartIdle(EntityState e, long now)
     {
         FinishReading(e, now);
+        EndSleep(e, now);
         SetResting(e, false, now);
         ClearScanState(ref e.Mind);
         e.Mind.Kind = ActionKind.Idle;
@@ -667,8 +683,10 @@ public sealed partial class SimulationWorld
             case ActionKind.Drink:
             case ActionKind.Work:
             case ActionKind.Read:
+            case ActionKind.Sleep:
             case ActionKind.Wander:
                 if (e.Mind.Kind == ActionKind.Read && e.ReadingSince > 0) { FinishAction(e, now); return; } // session over
+                if (e.Mind.Kind == ActionKind.Sleep && e.Mind.Resting) { FinishAction(e, now); return; } // sleep window over
                 var path = e.Mind.Path!;
                 if (e.Mind.PathIndex < path.Length)
                 {
@@ -688,6 +706,7 @@ public sealed partial class SimulationWorld
                     return;
                 }
                 if (e.Mind.Kind == ActionKind.Read) { StartReading(e, now); return; }
+                if (e.Mind.Kind == ActionKind.Sleep) { BeginSleep(e, now); return; }
                 if (e.Mind.Kind == ActionKind.Work) { DoWork(e, now); FinishAction(e, now); return; }
                 if (e.Mind.Kind == ActionKind.Eat && EatFromStorage(e, now)) { FinishAction(e, now); return; }
                 if (e.Mind.Kind == ActionKind.Drink) TryConsume(e.Id, ResourceKind.Water, now);

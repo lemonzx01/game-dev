@@ -9,10 +9,12 @@ using FantasyWorld.Simulation;
 var populations = new List<int>();
 int ticks = 2000, warmup = 300;
 bool tuned = false;
+bool body = false; // --body: R1 realism (sleep, species bodies) as in the game
 for (int i = 0; i < args.Length; i++)
 {
     if (args[i] == "--ticks") ticks = int.Parse(args[++i]);
     else if (args[i] == "--tuned") tuned = true;
+    else if (args[i] == "--body") body = true;
     else populations.Add(int.Parse(args[i]));
 }
 if (populations.Count == 0) populations.AddRange([100, 1000, 5000]);
@@ -35,6 +37,7 @@ void Run(int population)
         DiscretionaryWorkBudget = tuned ? Math.Max(256, population / 10 * 5 / 4) : 256,
         Mind = tuned ? MindConfig.Default with { PathNodeBudgetPerTick = Math.Max(4000, population * 4) } : MindConfig.Default,
         Ecology = EcologyConfig.Default with { MaxEntities = population * 3 },
+        Body = body ? BodyConfig.Realistic : BodyConfig.Default, // R1 sleep/bodies on (as in the game)
         Grants = ImmutableSortedDictionary<long, AuthorityGrant>.Empty.Add(1, AuthorityGrant.God),
     });
     var map = world.ReadMap();
